@@ -1,35 +1,51 @@
 module Types exposing (..)
 
 import Browser exposing (UrlRequest)
+import Effect.Browser.Navigation
 import EmailAddress exposing (EmailAddress)
+import Id exposing (Id, SurveyId, UserToken)
 import IdDict exposing (IdDict)
 import String.Nonempty exposing (NonemptyString)
 import Url exposing (Url)
 
 
-type FrontendModel
+type alias FrontendModel =
+    { key : Effect.Browser.Navigation.Key
+    , state : FrontendState
+    }
+
+
+type FrontendState
     = LoadingSurvey (Id SurveyId) (Id UserToken)
-    | AnsweringSurvey (Id SurveyId) (List { question : String, answer : String })
+    | AnsweringSurvey AnsweringSurvey2
     | SubmittedSurvey
-    | CreatingSurvey (List String)
-    | LoadingSurveyAdmin (Id SurveyId) (Id AdminToken)
+    | CreatingSurvey CreatingSurvey2
     | SurveyOverviewAdmin (Id SurveyId) BackendSurvey
+    | LoadingSurveyFailed LoadSurveyError
 
 
-type Id a
-    = Id String
+type alias AnsweringSurvey2 =
+    { surveyId : Id SurveyId
+    , answers : List { question : String, answer : String }
+    , submitState : SubmitState
+    }
 
 
-type UserToken
-    = UserToken Never
+type alias CreatingSurvey2 =
+    { questions : List String
+    , emailTo : String
+    , submitState : SubmitState
+    }
 
 
-type AdminToken
-    = AdminToken Never
+type SubmitState
+    = NotSubmitted HasSubmitted
+    | Submitting
 
 
-type SurveyId
-    = SurveyId Never
+type HasSubmitted
+    = HasPressedSubmitted
+    | HasNotPressedSubmitted
 
 
 type alias BackendModel =
@@ -40,6 +56,7 @@ type alias BackendModel =
 type alias BackendSurvey =
     { questions : List SurveyQuestion
     , emailedTo : IdDict UserToken EmailAddress
+    , owner : Id UserToken
     }
 
 
@@ -54,21 +71,27 @@ type alias SurveyQuestion =
 
 
 type FrontendMsg
-    = UrlClicked UrlRequest
+    = UrlClicked Browser.UrlRequest
     | UrlChanged Url
     | PressedSubmitSurvey
-    | PressedCreateSurvey
-    | PressedAddQuestion
+    | CreateSurveyMsg CreateSurveyMsg
     | TypedAnswer Int String
+
+
+type CreateSurveyMsg
+    = PressedCreateSurvey
+    | PressedAddQuestion
+    | PressedRemoveQuestion Int
+    | PressedMoveUpQuestion Int
+    | PressedMoveDownQuestion Int
     | TypedQuestion Int String
     | TypedEmailRecipients String
 
 
 type ToBackend
     = SubmitSurveyRequest (List { answer : String })
-    | CreateSurveyRequest (List { question : String })
+    | CreateSurveyRequest (List { question : String }) (List EmailAddress)
     | LoadSurveyRequest (Id SurveyId) (Id UserToken)
-    | LoadSurveyAdminRequest (Id SurveyId) (Id AdminToken)
 
 
 type BackendMsg
@@ -82,6 +105,6 @@ type LoadSurveyError
 
 type ToFrontend
     = SubmitSurveyResponse
-    | CreateSurveyResponse (Id SurveyId) (Id AdminToken)
-    | LoadSurveyResponse (Result LoadSurveyError (List { question : String }))
+    | CreateSurveyResponse (Id SurveyId) (Id UserToken)
+    | LoadSurveyResponse (Id SurveyId) (Result LoadSurveyError (List { question : String }))
     | LoadSurveyAdminResponse (Result () FrontendSurvey)
