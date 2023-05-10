@@ -1,6 +1,5 @@
 module Id exposing
-    ( AdminToken
-    , Id(..)
+    ( Id(..)
     , SurveyId
     , UserToken
     , decoder
@@ -41,14 +40,12 @@ encode (Id id) =
     Json.Encode.string id
 
 
-getUniqueId : Time.Posix -> { a | secretCounter : Int } -> ( { a | secretCounter : Int }, Id b )
-getUniqueId time model =
+getUniqueId : { a | secretCounter : Int } -> ( { a | secretCounter : Int }, Id b )
+getUniqueId model =
     ( { model | secretCounter = model.secretCounter + 1 }
     , Env.secretKey
         ++ ":"
         ++ String.fromInt model.secretCounter
-        ++ ":"
-        ++ String.fromInt (Time.posixToMillis time)
         |> Sha256.sha256
         |> Id
     )

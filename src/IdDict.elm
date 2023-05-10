@@ -5,7 +5,7 @@ module IdDict exposing
     , keys, values, toList, fromList
     , map, foldl, foldr, filter, partition
     , union, intersect, diff, merge
-    , NColor(..), filterMap, nextId
+    , NColor(..), filterMap
     )
 
 {-| A dictionary mapping unique keys to values. The keys can be any comparable
@@ -84,7 +84,7 @@ that lets you look up a `String` (such as user names) and find the associated
 
 -}
 type IdDict k v
-    = RBNode_elm_builtin NColor Int v (IdDict k v) (IdDict k v)
+    = RBNode_elm_builtin NColor String v (IdDict k v) (IdDict k v)
     | RBEmpty_elm_builtin
 
 
@@ -113,7 +113,7 @@ get targetKey dict =
             Nothing
 
         RBNode_elm_builtin _ key value left right ->
-            case compare (Id.toInt targetKey) key of
+            case compare (Id.toString targetKey) key of
                 LT ->
                     get targetKey left
 
@@ -188,10 +188,10 @@ insertHelp key value dict =
         RBEmpty_elm_builtin ->
             -- New nodes are always red. If it violates the rules, it will be fixed
             -- when balancing.
-            RBNode_elm_builtin Red (Id.toInt key) value RBEmpty_elm_builtin RBEmpty_elm_builtin
+            RBNode_elm_builtin Red (Id.toString key) value RBEmpty_elm_builtin RBEmpty_elm_builtin
 
         RBNode_elm_builtin nColor nKey nValue nLeft nRight ->
-            case compare (Id.toInt key) nKey of
+            case compare (Id.toString key) nKey of
                 LT ->
                     balance nColor nKey nValue (insertHelp key value nLeft) nRight
 
@@ -202,7 +202,7 @@ insertHelp key value dict =
                     balance nColor nKey nValue nLeft (insertHelp key value nRight)
 
 
-balance : NColor -> Int -> v -> IdDict k v -> IdDict k v -> IdDict k v
+balance : NColor -> String -> v -> IdDict k v -> IdDict k v -> IdDict k v
 balance color key value left right =
     case right of
         RBNode_elm_builtin Red rK rV rLeft rRight ->
@@ -238,7 +238,7 @@ no changes are made.
 remove : Id a -> IdDict a v -> IdDict a v
 remove key dict =
     -- Root node is always Black
-    case removeHelp (Id.toInt key) dict of
+    case removeHelp (Id.toString key) dict of
         RBNode_elm_builtin Red k v l r ->
             RBNode_elm_builtin Black k v l r
 
@@ -252,7 +252,7 @@ makes sure that the bottom node is red by moving red colors down the tree throug
 and color flips. Any violations this will cause, can easily be fixed by balancing on the way
 up again.
 -}
-removeHelp : Int -> IdDict a v -> IdDict a v
+removeHelp : String -> IdDict a v -> IdDict a v
 removeHelp targetKey dict =
     case dict of
         RBEmpty_elm_builtin ->
@@ -281,7 +281,7 @@ removeHelp targetKey dict =
                 removeHelpEQGT targetKey (removeHelpPrepEQGT targetKey dict color key value left right)
 
 
-removeHelpPrepEQGT : Int -> IdDict a v -> NColor -> Int -> v -> IdDict a v -> IdDict a v -> IdDict a v
+removeHelpPrepEQGT : String -> IdDict a v -> NColor -> String -> v -> IdDict a v -> IdDict a v -> IdDict a v
 removeHelpPrepEQGT targetKey dict color key value left right =
     case left of
         RBNode_elm_builtin Red lK lV lLeft lRight ->
@@ -307,7 +307,7 @@ removeHelpPrepEQGT targetKey dict color key value left right =
 {-| When we find the node we are looking for, we can remove by replacing the key-value
 pair with the key-value pair of the left-most node on the right side (the closest pair).
 -}
-removeHelpEQGT : Int -> IdDict a v -> IdDict a v
+removeHelpEQGT : String -> IdDict a v -> IdDict a v
 removeHelpEQGT targetKey dict =
     case dict of
         RBNode_elm_builtin color key value left right ->
@@ -444,7 +444,7 @@ update targetKey alter dictionary =
 singleton : Id a -> v -> IdDict a v
 singleton key value =
     -- Root node is always Black
-    RBNode_elm_builtin Black (Id.toInt key) value RBEmpty_elm_builtin RBEmpty_elm_builtin
+    RBNode_elm_builtin Black (Id.toString key) value RBEmpty_elm_builtin RBEmpty_elm_builtin
 
 
 
@@ -501,10 +501,10 @@ merge leftStep bothStep rightStep leftDict rightDict initialResult =
                     ( list, rightStep rKey rValue result )
 
                 ( lKey, lValue ) :: rest ->
-                    if Id.toInt lKey < Id.toInt rKey then
+                    if Id.toString lKey < Id.toString rKey then
                         stepState rKey rValue ( rest, leftStep lKey lValue result )
 
-                    else if Id.toInt lKey > Id.toInt rKey then
+                    else if Id.toString lKey > Id.toString rKey then
                         ( list, rightStep rKey rValue result )
 
                     else
@@ -529,7 +529,7 @@ map func dict =
             RBEmpty_elm_builtin
 
         RBNode_elm_builtin color key value left right ->
-            RBNode_elm_builtin color key (func (Id.fromInt key) value) (map func left) (map func right)
+            RBNode_elm_builtin color key (func (Id.fromString key) value) (map func left) (map func right)
 
 
 filterMap : (Id k -> a -> Maybe b) -> IdDict k a -> IdDict k b
@@ -569,7 +569,7 @@ foldl func acc dict =
             acc
 
         RBNode_elm_builtin _ key value left right ->
-            foldl func (func (Id.fromInt key) value (foldl func acc left)) right
+            foldl func (func (Id.fromString key) value (foldl func acc left)) right
 
 
 {-| Fold over the key-value pairs in a dictionary from highest key to lowest key.
@@ -594,7 +594,7 @@ foldr func acc t =
             acc
 
         RBNode_elm_builtin _ key value left right ->
-            foldr func (func (Id.fromInt key) value (foldr func acc right)) left
+            foldr func (func (Id.fromString key) value (foldr func acc right)) left
 
 
 {-| Keep only the key-value pairs that pass the given test.
@@ -666,13 +666,3 @@ toList dict =
 fromList : List ( Id a, v ) -> IdDict a v
 fromList assocs =
     List.foldl (\( key, value ) dict -> insert key value dict) empty assocs
-
-
-nextId : IdDict a b -> Id a
-nextId ids =
-    toList ids
-        |> List.map (Tuple.first >> Id.toInt)
-        |> List.maximum
-        |> Maybe.withDefault 0
-        |> (+) 1
-        |> Id.fromInt

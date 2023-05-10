@@ -1,10 +1,12 @@
 module Types exposing (..)
 
+import AssocList exposing (Dict)
 import Browser exposing (UrlRequest)
 import Effect.Browser.Navigation
 import EmailAddress exposing (EmailAddress)
 import Id exposing (Id, SurveyId, UserToken)
 import IdDict exposing (IdDict)
+import List.Nonempty exposing (Nonempty)
 import String.Nonempty exposing (NonemptyString)
 import Url exposing (Url)
 
@@ -20,27 +22,28 @@ type FrontendState
     | AnsweringSurvey AnsweringSurvey2
     | SubmittedSurvey
     | CreatingSurvey CreatingSurvey2
-    | SurveyOverviewAdmin (Id SurveyId) BackendSurvey
+    | SurveyOverviewAdmin (Id SurveyId) FrontendSurvey
     | LoadingSurveyFailed LoadSurveyError
 
 
 type alias AnsweringSurvey2 =
     { surveyId : Id SurveyId
-    , answers : List { question : String, answer : String }
-    , submitState : SubmitState
+    , userToken : Id UserToken
+    , answers : Nonempty { question : String, answer : String }
+    , submitState : SubmitState ()
     }
 
 
 type alias CreatingSurvey2 =
-    { questions : List String
+    { questions : Nonempty String
     , emailTo : String
-    , submitState : SubmitState
+    , submitState : SubmitState { questions : Nonempty String, emailTo : Nonempty EmailAddress }
     }
 
 
-type SubmitState
+type SubmitState a
     = NotSubmitted HasSubmitted
-    | Submitting
+    | Submitting a
 
 
 type HasSubmitted
@@ -50,24 +53,25 @@ type HasSubmitted
 
 type alias BackendModel =
     { surveys : IdDict SurveyId BackendSurvey
+    , secretCounter : Int
     }
 
 
 type alias BackendSurvey =
-    { questions : List SurveyQuestion
-    , emailedTo : IdDict UserToken EmailAddress
+    { questions : Nonempty SurveyQuestion
+    , emailedTo : Nonempty ( Id UserToken, EmailAddress )
     , owner : Id UserToken
     }
 
 
 type alias FrontendSurvey =
-    { questions : List SurveyQuestion
-    , emailedTo : IdDict UserToken EmailAddress
+    { questions : Nonempty SurveyQuestion
+    , emailedTo : Nonempty EmailAddress
     }
 
 
 type alias SurveyQuestion =
-    { question : String, answers : IdDict EmailAddress NonemptyString }
+    { question : String, answers : Dict EmailAddress NonemptyString }
 
 
 type FrontendMsg
@@ -85,12 +89,12 @@ type CreateSurveyMsg
     | PressedMoveUpQuestion Int
     | PressedMoveDownQuestion Int
     | TypedQuestion Int String
-    | TypedEmailRecipients String
+    | TypedEmailTo String
 
 
 type ToBackend
-    = SubmitSurveyRequest (List { answer : String })
-    | CreateSurveyRequest (List { question : String }) (List EmailAddress)
+    = SubmitSurveyRequest (Id SurveyId) (Id UserToken) (Nonempty { answer : String })
+    | CreateSurveyRequest (Nonempty { question : String }) (Nonempty EmailAddress)
     | LoadSurveyRequest (Id SurveyId) (Id UserToken)
 
 
@@ -106,5 +110,5 @@ type LoadSurveyError
 type ToFrontend
     = SubmitSurveyResponse
     | CreateSurveyResponse (Id SurveyId) (Id UserToken)
-    | LoadSurveyResponse (Id SurveyId) (Result LoadSurveyError (List { question : String }))
-    | LoadSurveyAdminResponse (Result () FrontendSurvey)
+    | LoadSurveyResponse (Id SurveyId) (Id UserToken) (Result LoadSurveyError (Nonempty { question : String }))
+    | LoadSurveyAdminResponse (Id SurveyId) (Result () FrontendSurvey)
