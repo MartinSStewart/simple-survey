@@ -14,7 +14,7 @@ decode : Url.Parser.Parser (Route -> c) c
 decode =
     Url.Parser.oneOf
         [ Url.Parser.top |> Url.Parser.map CreateSurvey
-        , Url.Parser.s "secret-link" </> idSegment </> idSegment |> Url.Parser.map ViewSurvey
+        , Url.Parser.s secretLinkPath </> idSegment </> idSegment |> Url.Parser.map ViewSurvey
         ]
 
 
@@ -26,7 +26,7 @@ encode route =
                 []
 
             ViewSurvey surveyId userToken ->
-                [ Id.toString surveyId, Id.toString userToken ]
+                [ secretLinkPath, Id.toString surveyId, Id.toString userToken ]
         )
         []
 
@@ -34,3 +34,7 @@ encode route =
 idSegment : Url.Parser.Parser (Id a -> c) c
 idSegment =
     Url.Parser.map Id.fromString Url.Parser.string
+
+
+secretLinkPath =
+    "secret-link"

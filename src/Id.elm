@@ -46,7 +46,7 @@ getUniqueId model =
     , Env.secretKey
         ++ ":"
         ++ String.fromInt model.secretCounter
-        |> Sha256.sha256
+        |> Sha256.sha224
         |> Id
     )
 

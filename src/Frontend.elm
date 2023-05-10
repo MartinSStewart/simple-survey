@@ -9,6 +9,7 @@ import Effect.Lamdera
 import Effect.Subscription as Subscription exposing (Subscription)
 import Element exposing (Element)
 import Element.Background
+import Element.Border
 import Element.Font
 import Element.Input
 import EmailAddress exposing (EmailAddress)
@@ -18,7 +19,7 @@ import IdDict
 import Lamdera
 import List.Extra as List
 import List.Nonempty exposing (Nonempty(..))
-import Route
+import Route exposing (Route)
 import Types exposing (..)
 import Url
 import Url.Parser
@@ -40,8 +41,11 @@ app =
 init : Url.Url -> Effect.Browser.Navigation.Key -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 init url key =
     let
+        route : Route
         route =
-            Url.Parser.parse Route.decode url |> Maybe.withDefault Route.CreateSurvey
+            Url.Parser.parse Route.decode url
+                |> Maybe.withDefault Route.CreateSurvey
+                |> Debug.log "a"
     in
     case route of
         Route.CreateSurvey ->
@@ -49,7 +53,7 @@ init url key =
               , state =
                     CreatingSurvey
                         { questions = Nonempty "" []
-                        , submitState = NotSubmitted HasNotPressedSubmitted
+                        , submitState = NotSubmitted HasNotPressedSubmit
                         , emailTo = ""
                         }
               }
@@ -137,7 +141,19 @@ validateEmails text =
     let
         emails : List ( String, Maybe EmailAddress )
         emails =
-            String.split "," text |> List.map (\subtext -> ( subtext, EmailAddress.fromString subtext ))
+            String.split "," text
+                |> List.filterMap
+                    (\subtext ->
+                        let
+                            trimmed =
+                                String.trim subtext
+                        in
+                        if trimmed == "" then
+                            Nothing
+
+                        else
+                            Just ( trimmed, EmailAddress.fromString trimmed )
+                    )
 
         validEmails : List EmailAddress
         validEmails =
@@ -162,7 +178,7 @@ validateEmails text =
                     Ok nonempty
 
                 Nothing ->
-                    Err "Include at least one email address. Otherwise the survey won't be shown to anyone!"
+                    Err "Include at least one email address. Otherwise the survey won't be sent to anyone!"
 
         [ invalidEmail ] ->
             invalidEmail ++ " is not a valid email" |> Err
@@ -193,7 +209,7 @@ updateCreateSurvey msg creatingSurvey =
                             )
 
                         Err _ ->
-                            ( { creatingSurvey | submitState = NotSubmitted HasPressedSubmitted }
+                            ( { creatingSurvey | submitState = NotSubmitted HasPressedSubmit }
                             , Command.none
                             )
 
@@ -303,7 +319,7 @@ updateFromBackend msg model =
                                     List.Nonempty.map
                                         (\{ question } -> { question = question, answer = "" })
                                         ok
-                                , submitState = NotSubmitted HasNotPressedSubmitted
+                                , submitState = NotSubmitted HasNotPressedSubmit
                                 }
                     }
 
@@ -342,29 +358,54 @@ view model =
                         [ Element.text "Survey successfully submitted. Thanks!" ]
 
                 CreatingSurvey creatingSurvey2 ->
+                    let
+                        showRemoveButton =
+                            List.Nonempty.length creatingSurvey2.questions > 1
+                    in
                     Element.column
-                        []
-                        [ Element.column
-                            [ Element.spacing 32 ]
-                            (List.indexedMap editQuestionView (List.Nonempty.toList creatingSurvey2.questions))
-                        , Element.Input.text
-                            []
-                            { onChange = TypedEmailTo
-                            , text = creatingSurvey2.emailTo
-                            , placeholder = Nothing
-                            , label =
-                                Element.Input.labelAbove
-                                    []
-                                    (Element.paragraph
+                        [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
+                        [ Element.paragraph [ Element.Font.size 24, Element.Font.bold ] [ Element.text "Create a survey" ]
+                        , Element.column
+                            [ Element.spacing 32, Element.width Element.fill ]
+                            [ Element.column
+                                [ Element.spacing 16, Element.width Element.fill ]
+                                (List.indexedMap
+                                    (editQuestionView showRemoveButton)
+                                    (List.Nonempty.toList creatingSurvey2.questions)
+                                )
+                            , button buttonAttributes PressedAddQuestion (Element.text "Add new question")
+                            ]
+                        , Element.column
+                            [ Element.spacing 4 ]
+                            [ Element.Input.text
+                                []
+                                { onChange = TypedEmailTo
+                                , text = creatingSurvey2.emailTo
+                                , placeholder = Nothing
+                                , label =
+                                    Element.Input.labelAbove
                                         []
-                                        [ Element.text "List of people you want this survey emailed to. Separate each email with a comma (i.e. john.doe@example.com, bob-smith@bob.com, jane123@mail.com)"
-                                        ]
-                                    )
-                            }
+                                        (Element.paragraph
+                                            []
+                                            [ Element.text "List the people you want this survey emailed to. Separate each email with a comma (i.e. john.doe@example.com, bob-smith@bob.com, jane123@mail.com)"
+                                            ]
+                                        )
+                                }
+                            , case ( creatingSurvey2.submitState, validateEmails creatingSurvey2.emailTo ) of
+                                ( NotSubmitted HasPressedSubmit, Err error ) ->
+                                    Element.paragraph [ Element.Font.color (Element.rgb 1 0 0) ] [ Element.text error ]
+
+                                _ ->
+                                    Element.none
+                            ]
+                        , button
+                            buttonAttributes
+                            PressedCreateSurvey
+                            (Element.text "Create survey")
                         ]
                         |> Element.map CreateSurveyMsg
 
-                SurveyOverviewAdmin id backendSurvey ->
+                SurveyOverviewAdmin _ survey ->
                     Element.text ""
 
                 LoadingSurveyFailed loadSurveyError ->
@@ -374,34 +415,59 @@ view model =
     }
 
 
-editQuestionView : Int -> String -> Element CreateSurveyMsg
-editQuestionView index text =
+buttonAttributes =
+    [ Element.width Element.fill
+    , Element.Background.color (Element.rgb 0.9 0.9 0.9)
+    , Element.padding 8
+    , Element.Border.shadow { offset = ( 0, 0 ), size = 0, blur = 2, color = Element.rgba 0 0 0 0.4 }
+    , Element.Border.rounded 4
+    , Element.Font.center
+    , Element.Font.bold
+    ]
+
+
+contentWidth : Element.Attribute msg
+contentWidth =
+    Element.width (Element.maximum 800 Element.fill)
+
+
+editQuestionView : Bool -> Int -> String -> Element CreateSurveyMsg
+editQuestionView showRemoveButton index text =
     Element.row
-        [ Element.spacing 8 ]
+        [ Element.spacing 8, Element.width Element.fill ]
         [ Element.Input.multiline
-            []
+            [ Element.width Element.fill ]
             { onChange = TypedQuestion index
             , text = text
             , placeholder = Nothing
             , label =
                 Element.Input.labelAbove
-                    []
-                    (Element.text ("Question " ++ String.fromInt (index + 1) ++ "."))
+                    [ Element.Font.bold ]
+                    (Element.text ("Question " ++ String.fromInt (index + 1)))
             , spellcheck = True
             }
         , Element.row
-            []
-            [ button [] (PressedMoveDownQuestion index) (Element.text "▼")
-            , button [] (PressedMoveUpQuestion index) (Element.text "▲")
+            [ Element.moveDown 8 ]
+            [ Element.row
+                []
+                [ button [ Element.paddingXY 12 8 ] (PressedMoveDownQuestion index) (Element.text "▼")
+                , button [ Element.paddingXY 12 8 ] (PressedMoveUpQuestion index) (Element.text "▲")
+                ]
+            , if showRemoveButton then
+                button
+                    [ Element.Background.color (Element.rgb 1 0 0)
+                    , Element.Font.color (Element.rgb 1 1 1)
+                    , Element.paddingXY 12 8
+                    ]
+                    (PressedRemoveQuestion index)
+                    (Element.text "×")
+
+              else
+                Element.none
             ]
-        , button
-            [ Element.Background.color (Element.rgb 1 0 0)
-            , Element.Font.color (Element.rgb 1 1 1)
-            ]
-            (PressedRemoveQuestion index)
-            (Element.text "×")
         ]
 
 
+button : List (Element.Attribute msg) -> msg -> Element msg -> Element msg
 button attributes msg label =
     Element.Input.button attributes { onPress = Just msg, label = label }

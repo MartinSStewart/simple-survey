@@ -47,8 +47,8 @@ type SubmitState a
 
 
 type HasSubmitted
-    = HasPressedSubmitted
-    | HasNotPressedSubmitted
+    = HasPressedSubmit
+    | HasNotPressedSubmit
 
 
 type alias BackendModel =
