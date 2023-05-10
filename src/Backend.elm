@@ -52,7 +52,7 @@ updateFromFrontend sessionId clientId msg model =
             case IdDict.get surveyId model.surveys of
                 Just survey ->
                     case nonemptyGet userToken survey.emailedTo of
-                        Just emailAddress ->
+                        Just { email } ->
                             let
                                 answers2 : Nonempty { answer : String }
                                 answers2 =
@@ -73,7 +73,7 @@ updateFromFrontend sessionId clientId msg model =
                                                             Just answer ->
                                                                 { question
                                                                     | answers =
-                                                                        Dict.insert emailAddress answer question.answers
+                                                                        Dict.insert email answer question.answers
                                                                 }
 
                                                             Nothing ->
@@ -111,9 +111,11 @@ updateFromFrontend sessionId clientId msg model =
                                 ( model6, userToken3 ) =
                                     Id.getUniqueId model5
                             in
-                            ( model6, List.Nonempty.cons ( userToken3, email ) list )
+                            ( model6
+                            , List.Nonempty.cons ( userToken3, { email = email, result = SendingEmail } ) list
+                            )
                         )
-                        ( model4, Nonempty ( userToken2, List.Nonempty.head emailTo ) [] )
+                        ( model4, Nonempty ( userToken2, { email = List.Nonempty.head emailTo, result = SendingEmail } ) [] )
                         (List.Nonempty.tail emailTo)
             in
             ( { model7
@@ -145,8 +147,8 @@ updateFromFrontend sessionId clientId msg model =
 
                     else
                         case nonemptyGet userToken survey.emailedTo of
-                            Just emailAddress ->
-                                if hasSubmitted emailAddress survey then
+                            Just { email } ->
+                                if hasSubmitted email survey then
                                     List.Nonempty.map (\{ question } -> { question = question }) survey.questions
                                         |> Ok
                                         |> LoadSurveyResponse surveyId userToken

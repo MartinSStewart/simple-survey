@@ -3,10 +3,12 @@ module Types exposing (..)
 import AssocList exposing (Dict)
 import Browser exposing (UrlRequest)
 import Effect.Browser.Navigation
+import Effect.Http as Http
 import EmailAddress exposing (EmailAddress)
 import Id exposing (Id, SurveyId, UserToken)
 import IdDict exposing (IdDict)
 import List.Nonempty exposing (Nonempty)
+import Postmark exposing (PostmarkSendResponse)
 import String.Nonempty exposing (NonemptyString)
 import Url exposing (Url)
 
@@ -59,15 +61,21 @@ type alias BackendModel =
 
 type alias BackendSurvey =
     { questions : Nonempty SurveyQuestion
-    , emailedTo : Nonempty ( Id UserToken, EmailAddress )
+    , emailedTo : Nonempty ( Id UserToken, { email : EmailAddress, result : EmailStatus } )
     , owner : Id UserToken
     }
 
 
 type alias FrontendSurvey =
     { questions : Nonempty SurveyQuestion
-    , emailedTo : Nonempty EmailAddress
+    , emailedTo : Nonempty { email : EmailAddress, result : EmailStatus }
     }
+
+
+type EmailStatus
+    = SendingEmail
+    | EmailError Http.Error
+    | EmailSuccess PostmarkSendResponse
 
 
 type alias SurveyQuestion =

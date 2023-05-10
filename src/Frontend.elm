@@ -20,6 +20,7 @@ import Lamdera
 import List.Extra as List
 import List.Nonempty exposing (Nonempty(..))
 import Route exposing (Route)
+import String.Nonempty
 import Types exposing (..)
 import Url
 import Url.Parser
@@ -293,7 +294,10 @@ updateFromBackend msg model =
                                             List.Nonempty.map
                                                 (\question -> { question = question, answers = Dict.empty })
                                                 questions
-                                        , emailedTo = emailTo
+                                        , emailedTo =
+                                            List.Nonempty.map
+                                                (\email -> { email = email, result = SendingEmail })
+                                                emailTo
                                         }
                               }
                             , Effect.Browser.Navigation.pushUrl
@@ -364,7 +368,7 @@ view model =
                     in
                     Element.column
                         [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
-                        [ Element.paragraph [ Element.Font.size 24, Element.Font.bold ] [ Element.text "Create a survey" ]
+                        [ title "Create a survey"
                         , Element.column
                             [ Element.spacing 32, Element.width Element.fill ]
                             [ Element.column
@@ -406,7 +410,13 @@ view model =
                         |> Element.map CreateSurveyMsg
 
                 SurveyOverviewAdmin _ survey ->
-                    Element.text ""
+                    Element.column
+                        [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
+                        [ title "Survey results"
+                        , Element.column
+                            [ Element.spacing 16 ]
+                            (List.map questionResultView (List.Nonempty.toList survey.questions))
+                        ]
 
                 LoadingSurveyFailed loadSurveyError ->
                     Element.text ""
@@ -415,6 +425,36 @@ view model =
     }
 
 
+title : String -> Element msg
+title text =
+    Element.paragraph [ Element.Font.size 24, Element.Font.bold ] [ Element.text text ]
+
+
+questionResultView : SurveyQuestion -> Element msg
+questionResultView { question, answers } =
+    Element.column
+        [ Element.width Element.fill, Element.spacing 8 ]
+        [ Element.paragraph [ Element.Font.bold ] [ Element.text question ]
+        , if Dict.isEmpty answers then
+            Element.paragraph
+                [ Element.Font.italic, Element.Font.color (Element.rgb 0.3 0.3 0.3), Element.Font.size 16 ]
+                [ Element.text "No one has answered yet" ]
+
+          else
+            List.map
+                (\( emailAddress, answer ) ->
+                    Element.row
+                        [ Element.width Element.fill ]
+                        [ Element.el [ Element.Font.bold, Element.Font.size 16 ] (Element.text (EmailAddress.toString emailAddress))
+                        , Element.paragraph [ Element.Font.size 16 ] [ Element.text (String.Nonempty.toString answer) ]
+                        ]
+                )
+                (Dict.toList answers)
+                |> Element.column [ Element.spacing 16, Element.width Element.fill ]
+        ]
+
+
+buttonAttributes : List (Element.Attribute msg)
 buttonAttributes =
     [ Element.width Element.fill
     , Element.Background.color (Element.rgb 0.9 0.9 0.9)
