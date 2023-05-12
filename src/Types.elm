@@ -60,6 +60,7 @@ type HasSubmitted
 type alias BackendModel =
     { surveys : IdDict SurveyId BackendSurvey
     , secretCounter : Int
+    , surveyIdCounter : Int
     }
 
 

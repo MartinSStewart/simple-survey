@@ -7,15 +7,18 @@ import Effect.Lamdera exposing (ClientId, SessionId)
 import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task as Task exposing (Task)
 import Email.Html
+import Email.Html.Attributes
 import EmailAddress exposing (EmailAddress)
 import Env
+import Hex
 import Html
-import Id
+import Id exposing (Id, SurveyId, UserToken)
 import IdDict
 import Lamdera
 import List.Extra as List
 import List.Nonempty exposing (Nonempty(..))
 import Postmark
+import Route
 import String.Nonempty exposing (NonemptyString(..))
 import SurveyName
 import Types exposing (..)
@@ -35,7 +38,7 @@ app =
 
 init : ( BackendModel, Command restriction toMsg BackendMsg )
 init =
-    ( { surveys = IdDict.empty, secretCounter = 0 }
+    ( { surveys = IdDict.empty, secretCounter = 0, surveyIdCounter = 0 }
     , Command.none
     )
 
@@ -78,6 +81,34 @@ update msg model =
               }
             , Command.none
             )
+
+
+surveyEmail :
+    SurveyName.SurveyName
+    -> Id SurveyId
+    -> Id UserToken
+    -> { subject : NonemptyString, htmlBody : Email.Html.Html, textBody : String }
+surveyEmail surveyName surveyId userToken =
+    { subject = SurveyName.toNonemptyString surveyName
+    , htmlBody =
+        Email.Html.div
+            []
+            [ Email.Html.text "A survey titled "
+            , Email.Html.b
+                []
+                [ Email.Html.text (SurveyName.toString surveyName) ]
+            , Email.Html.text " is ready for you to fill out. "
+            , Email.Html.a
+                [ Env.domain
+                    ++ Route.encode (Route.ViewSurvey surveyId userToken)
+                    |> Email.Html.Attributes.href
+                ]
+                [ Email.Html.text "Click here to view it." ]
+            , Email.Html.br [] []
+            , Email.Html.text "If you don't recognize this survey then we recommend not filling it out."
+            ]
+    , textBody = ""
+    }
 
 
 updateFromFrontend :
@@ -136,7 +167,9 @@ updateFromFrontend sessionId clientId msg model =
         CreateSurveyRequest surveyName questions emailTo ->
             let
                 ( model2, surveyId ) =
-                    Id.getUniqueId model
+                    ( { model | surveyIdCounter = model.surveyIdCounter + 1 }
+                    , Hex.toString model.surveyIdCounter |> Id.fromString
+                    )
 
                 ( model3, userToken ) =
                     Id.getUniqueId model2
@@ -162,19 +195,20 @@ updateFromFrontend sessionId clientId msg model =
 
                 emails : Command restriction toMsg BackendMsg
                 emails =
-                    List.Nonempty.toList emailTo
+                    List.Nonempty.toList emailTo2
                         |> List.map
-                            (\email ->
+                            (\( userToken3, { email } ) ->
+                                let
+                                    { subject, htmlBody, textBody } =
+                                        surveyEmail surveyName surveyId userToken3
+                                in
                                 Postmark.sendEmail
                                     (SurveyEmailSent surveyId email)
                                     Env.postmarkApiKey
                                     { from = { name = "Simple Survey", email = replyEmail }
                                     , to = Nonempty { name = "", email = email } []
-                                    , subject = SurveyName.toNonemptyString surveyName
-                                    , body =
-                                        Postmark.BodyBoth
-                                            (Email.Html.text "")
-                                            ""
+                                    , subject = subject
+                                    , body = Postmark.BodyBoth htmlBody textBody
                                     , messageStream = "outbound"
                                     }
                             )

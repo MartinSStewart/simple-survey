@@ -47,6 +47,7 @@ getUniqueId model =
         ++ ":"
         ++ String.fromInt model.secretCounter
         |> Sha256.sha224
+        |> String.left 20
         |> Id
     )
 
