@@ -47,7 +47,6 @@ init url key =
         route =
             Url.Parser.parse Route.decode url
                 |> Maybe.withDefault Route.CreateSurvey
-                |> Debug.log "a"
     in
     case route of
         Route.CreateSurvey ->
