@@ -13,3 +13,7 @@ postmarkApiKey_ =
 
 postmarkApiKey =
     Postmark.apiKey postmarkApiKey_
+
+
+domain =
+    "http://localhost:8000"
