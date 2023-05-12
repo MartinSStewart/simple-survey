@@ -10,6 +10,7 @@ import IdDict exposing (IdDict)
 import List.Nonempty exposing (Nonempty)
 import Postmark exposing (PostmarkSendResponse)
 import String.Nonempty exposing (NonemptyString)
+import SurveyName exposing (SurveyName)
 import Url exposing (Url)
 
 
@@ -31,15 +32,18 @@ type FrontendState
 type alias AnsweringSurvey2 =
     { surveyId : Id SurveyId
     , userToken : Id UserToken
+    , emailAddress : EmailAddress
+    , title : SurveyName
     , answers : Nonempty { question : String, answer : String }
     , submitState : SubmitState ()
     }
 
 
 type alias CreatingSurvey2 =
-    { questions : Nonempty String
+    { surveyName : String
+    , questions : Nonempty String
     , emailTo : String
-    , submitState : SubmitState { questions : Nonempty String, emailTo : Nonempty EmailAddress }
+    , submitState : SubmitState { surveyName : SurveyName, questions : Nonempty String, emailTo : Nonempty EmailAddress }
     }
 
 
@@ -60,15 +64,17 @@ type alias BackendModel =
 
 
 type alias BackendSurvey =
-    { questions : Nonempty SurveyQuestion
-    , emailedTo : Nonempty ( Id UserToken, { email : EmailAddress, result : EmailStatus } )
+    { title : SurveyName
+    , questions : Nonempty SurveyQuestion
+    , emailedTo : Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )
     , owner : Id UserToken
     }
 
 
 type alias FrontendSurvey =
-    { questions : Nonempty SurveyQuestion
-    , emailedTo : Nonempty { email : EmailAddress, result : EmailStatus }
+    { title : SurveyName
+    , questions : Nonempty SurveyQuestion
+    , emailedTo : Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )
     }
 
 
@@ -98,16 +104,17 @@ type CreateSurveyMsg
     | PressedMoveDownQuestion Int
     | TypedQuestion Int String
     | TypedEmailTo String
+    | TypedSurveyName String
 
 
 type ToBackend
     = SubmitSurveyRequest (Id SurveyId) (Id UserToken) (Nonempty { answer : String })
-    | CreateSurveyRequest (Nonempty { question : String }) (Nonempty EmailAddress)
+    | CreateSurveyRequest SurveyName (Nonempty { question : String }) (Nonempty EmailAddress)
     | LoadSurveyRequest (Id SurveyId) (Id UserToken)
 
 
 type BackendMsg
-    = NoOpBackendMsg
+    = SurveyEmailSent (Id SurveyId) EmailAddress (Result Http.Error PostmarkSendResponse)
 
 
 type LoadSurveyError
@@ -117,6 +124,15 @@ type LoadSurveyError
 
 type ToFrontend
     = SubmitSurveyResponse
-    | CreateSurveyResponse (Id SurveyId) (Id UserToken)
-    | LoadSurveyResponse (Id SurveyId) (Id UserToken) (Result LoadSurveyError (Nonempty { question : String }))
+    | CreateSurveyResponse (Id SurveyId) (Id UserToken) (Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } ))
+    | LoadSurveyResponse
+        (Result
+            LoadSurveyError
+            { surveyId : Id SurveyId
+            , userToken : Id UserToken
+            , emailAddress : EmailAddress
+            , surveyName : SurveyName
+            , questions : Nonempty { question : String }
+            }
+        )
     | LoadSurveyAdminResponse (Id SurveyId) (Result () FrontendSurvey)

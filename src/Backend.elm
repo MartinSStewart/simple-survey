@@ -2,17 +2,24 @@ module Backend exposing (..)
 
 import AssocList as Dict
 import Effect.Command as Command exposing (BackendOnly, Command)
+import Effect.Http as Http
 import Effect.Lamdera exposing (ClientId, SessionId)
 import Effect.Subscription as Subscription exposing (Subscription)
+import Effect.Task as Task exposing (Task)
+import Email.Html
 import EmailAddress exposing (EmailAddress)
+import Env
 import Html
 import Id
 import IdDict
 import Lamdera
 import List.Extra as List
 import List.Nonempty exposing (Nonempty(..))
-import String.Nonempty
+import Postmark
+import String.Nonempty exposing (NonemptyString(..))
+import SurveyName
 import Types exposing (..)
+import Unsafe
 
 
 app =
@@ -36,8 +43,41 @@ init =
 update : BackendMsg -> BackendModel -> ( BackendModel, Command restriction toMsg BackendMsg )
 update msg model =
     case msg of
-        NoOpBackendMsg ->
-            ( model, Command.none )
+        SurveyEmailSent surveyId emailAddress result ->
+            ( { model
+                | surveys =
+                    IdDict.update
+                        surveyId
+                        (Maybe.map
+                            (\survey ->
+                                { survey
+                                    | emailedTo =
+                                        List.Nonempty.map
+                                            (\(( userToken, { email, emailStatus } ) as original) ->
+                                                if emailAddress == email then
+                                                    ( userToken
+                                                    , { email = email
+                                                      , emailStatus =
+                                                            case result of
+                                                                Ok ok ->
+                                                                    EmailSuccess ok
+
+                                                                Err error ->
+                                                                    EmailError error
+                                                      }
+                                                    )
+
+                                                else
+                                                    original
+                                            )
+                                            survey.emailedTo
+                                }
+                            )
+                        )
+                        model.surveys
+              }
+            , Command.none
+            )
 
 
 updateFromFrontend :
@@ -93,7 +133,7 @@ updateFromFrontend sessionId clientId msg model =
                 Nothing ->
                     ( model, Command.none )
 
-        CreateSurveyRequest questions emailTo ->
+        CreateSurveyRequest surveyName questions emailTo ->
             let
                 ( model2, surveyId ) =
                     Id.getUniqueId model
@@ -112,17 +152,40 @@ updateFromFrontend sessionId clientId msg model =
                                     Id.getUniqueId model5
                             in
                             ( model6
-                            , List.Nonempty.cons ( userToken3, { email = email, result = SendingEmail } ) list
+                            , List.Nonempty.cons ( userToken3, { email = email, emailStatus = SendingEmail } ) list
                             )
                         )
-                        ( model4, Nonempty ( userToken2, { email = List.Nonempty.head emailTo, result = SendingEmail } ) [] )
+                        ( model4
+                        , Nonempty ( userToken2, { email = List.Nonempty.head emailTo, emailStatus = SendingEmail } ) []
+                        )
                         (List.Nonempty.tail emailTo)
+
+                emails : Command restriction toMsg BackendMsg
+                emails =
+                    List.Nonempty.toList emailTo
+                        |> List.map
+                            (\email ->
+                                Postmark.sendEmail
+                                    (SurveyEmailSent surveyId email)
+                                    Env.postmarkApiKey
+                                    { from = { name = "Simple Survey", email = replyEmail }
+                                    , to = Nonempty { name = "", email = email } []
+                                    , subject = SurveyName.toNonemptyString surveyName
+                                    , body =
+                                        Postmark.BodyBoth
+                                            (Email.Html.text "")
+                                            ""
+                                    , messageStream = "outbound"
+                                    }
+                            )
+                        |> Command.batch
             in
             ( { model7
                 | surveys =
                     IdDict.insert
                         surveyId
-                        { questions =
+                        { title = surveyName
+                        , questions =
                             List.Nonempty.map
                                 (\{ question } -> { question = question, answers = Dict.empty })
                                 questions
@@ -131,7 +194,10 @@ updateFromFrontend sessionId clientId msg model =
                         }
                         model7.surveys
               }
-            , Effect.Lamdera.sendToFrontend clientId (CreateSurveyResponse surveyId userToken)
+            , Command.batch
+                [ Effect.Lamdera.sendToFrontend clientId (CreateSurveyResponse surveyId userToken emailTo2)
+                , emails
+                ]
             )
 
         LoadSurveyRequest surveyId userToken ->
@@ -139,8 +205,9 @@ updateFromFrontend sessionId clientId msg model =
             , (case IdDict.get surveyId model.surveys of
                 Just survey ->
                     if survey.owner == userToken then
-                        { questions = survey.questions
-                        , emailedTo = List.Nonempty.map Tuple.second survey.emailedTo
+                        { title = survey.title
+                        , questions = survey.questions
+                        , emailedTo = survey.emailedTo
                         }
                             |> Ok
                             |> LoadSurveyAdminResponse surveyId
@@ -149,21 +216,30 @@ updateFromFrontend sessionId clientId msg model =
                         case nonemptyGet userToken survey.emailedTo of
                             Just { email } ->
                                 if hasSubmitted email survey then
-                                    List.Nonempty.map (\{ question } -> { question = question }) survey.questions
+                                    { surveyId = surveyId
+                                    , userToken = userToken
+                                    , emailAddress = email
+                                    , surveyName = survey.title
+                                    , questions = List.Nonempty.map (\{ question } -> { question = question }) survey.questions
+                                    }
                                         |> Ok
-                                        |> LoadSurveyResponse surveyId userToken
+                                        |> LoadSurveyResponse
 
                                 else
-                                    LoadSurveyResponse surveyId userToken (Err InvalidSurveyLink)
+                                    LoadSurveyResponse (Err InvalidSurveyLink)
 
                             Nothing ->
-                                LoadSurveyResponse surveyId userToken (Err InvalidSurveyLink)
+                                LoadSurveyResponse (Err InvalidSurveyLink)
 
                 Nothing ->
-                    LoadSurveyResponse surveyId userToken (Err InvalidSurveyLink)
+                    LoadSurveyResponse (Err InvalidSurveyLink)
               )
                 |> Effect.Lamdera.sendToFrontend clientId
             )
+
+
+replyEmail =
+    Unsafe.emailAddress "no-reply@simple-survey.lamdera.app"
 
 
 nonemptyGet : a -> Nonempty ( a, b ) -> Maybe b

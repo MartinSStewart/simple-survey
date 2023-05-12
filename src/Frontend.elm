@@ -14,13 +14,14 @@ import Element.Font
 import Element.Input
 import EmailAddress exposing (EmailAddress)
 import Html
-import Html.Attributes as Attr
+import Html.Attributes
 import IdDict
 import Lamdera
 import List.Extra as List
 import List.Nonempty exposing (Nonempty(..))
 import Route exposing (Route)
 import String.Nonempty
+import SurveyName exposing (Error(..), SurveyName)
 import Types exposing (..)
 import Url
 import Url.Parser
@@ -53,7 +54,8 @@ init url key =
             ( { key = key
               , state =
                     CreatingSurvey
-                        { questions = Nonempty "" []
+                        { surveyName = ""
+                        , questions = Nonempty "" []
                         , submitState = NotSubmitted HasNotPressedSubmit
                         , emailTo = ""
                         }
@@ -191,25 +193,43 @@ validateEmails text =
                 |> Err
 
 
+validateSurveyName : String -> Result String SurveyName
+validateSurveyName text =
+    case SurveyName.fromString text of
+        Ok ok ->
+            Ok ok
+
+        Err SurveyNameTooLong ->
+            Err "Pick a shorter name"
+
+        Err SurveyNameTooShort ->
+            Err "Can't be empty"
+
+
 updateCreateSurvey : CreateSurveyMsg -> CreatingSurvey2 -> ( CreatingSurvey2, Command FrontendOnly ToBackend FrontendMsg )
 updateCreateSurvey msg creatingSurvey =
     case msg of
         PressedCreateSurvey ->
             case creatingSurvey.submitState of
                 NotSubmitted _ ->
-                    case validateEmails creatingSurvey.emailTo of
-                        Ok emails ->
+                    case ( validateEmails creatingSurvey.emailTo, validateSurveyName creatingSurvey.surveyName ) of
+                        ( Ok emails, Ok surveyName ) ->
                             ( { creatingSurvey
                                 | submitState =
-                                    Submitting { questions = creatingSurvey.questions, emailTo = emails }
+                                    Submitting
+                                        { surveyName = surveyName
+                                        , questions = creatingSurvey.questions
+                                        , emailTo = emails
+                                        }
                               }
                             , CreateSurveyRequest
+                                surveyName
                                 (List.Nonempty.map (\question -> { question = question }) creatingSurvey.questions)
                                 emails
                                 |> Effect.Lamdera.sendToBackend
                             )
 
-                        Err _ ->
+                        _ ->
                             ( { creatingSurvey | submitState = NotSubmitted HasPressedSubmit }
                             , Command.none
                             )
@@ -269,6 +289,9 @@ updateCreateSurvey msg creatingSurvey =
         TypedEmailTo text ->
             ( { creatingSurvey | emailTo = text }, Command.none )
 
+        TypedSurveyName text ->
+            ( { creatingSurvey | surveyName = text }, Command.none )
+
 
 updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command FrontendOnly toMsg FrontendMsg )
 updateFromBackend msg model =
@@ -281,23 +304,21 @@ updateFromBackend msg model =
                 _ ->
                     ( model, Command.none )
 
-        CreateSurveyResponse surveyId userToken ->
+        CreateSurveyResponse surveyId userToken emailedTo ->
             case model.state of
                 CreatingSurvey { submitState } ->
                     case submitState of
-                        Submitting { questions, emailTo } ->
+                        Submitting { surveyName, questions, emailTo } ->
                             ( { model
                                 | state =
                                     SurveyOverviewAdmin
                                         surveyId
-                                        { questions =
+                                        { title = surveyName
+                                        , questions =
                                             List.Nonempty.map
                                                 (\question -> { question = question, answers = Dict.empty })
                                                 questions
-                                        , emailedTo =
-                                            List.Nonempty.map
-                                                (\email -> { email = email, result = SendingEmail })
-                                                emailTo
+                                        , emailedTo = emailedTo
                                         }
                               }
                             , Effect.Browser.Navigation.pushUrl
@@ -311,18 +332,20 @@ updateFromBackend msg model =
                 _ ->
                     ( model, Command.none )
 
-        LoadSurveyResponse surveyId userToken result ->
+        LoadSurveyResponse result ->
             ( case result of
-                Ok ok ->
+                Ok { surveyId, userToken, emailAddress, surveyName, questions } ->
                     { model
                         | state =
                             AnsweringSurvey
-                                { surveyId = surveyId
+                                { title = surveyName
+                                , surveyId = surveyId
                                 , userToken = userToken
+                                , emailAddress = emailAddress
                                 , answers =
                                     List.Nonempty.map
                                         (\{ question } -> { question = question, answer = "" })
-                                        ok
+                                        questions
                                 , submitState = NotSubmitted HasNotPressedSubmit
                                 }
                     }
@@ -343,6 +366,23 @@ updateFromBackend msg model =
             )
 
 
+unansweredQuestions : Nonempty { a | answer : String } -> Int
+unansweredQuestions list =
+    List.count (\{ answer } -> String.trim answer == "") (List.Nonempty.toList list)
+
+
+answerQuestionView : Int -> { question : String, answer : String } -> Element FrontendMsg
+answerQuestionView index { question, answer } =
+    Element.Input.multiline
+        []
+        { onChange = TypedAnswer index
+        , text = answer
+        , placeholder = Nothing
+        , label = Element.Input.labelAbove [] (whiteSpaceParagraph question)
+        , spellcheck = True
+        }
+
+
 view : FrontendModel -> Browser.Document FrontendMsg
 view model =
     { title = ""
@@ -354,7 +394,36 @@ view model =
                     Element.text "Loading..."
 
                 AnsweringSurvey answeringSurvey2 ->
-                    Element.text ""
+                    let
+                        unansweredQuestions2 : Int
+                        unansweredQuestions2 =
+                            unansweredQuestions answeringSurvey2.answers
+                    in
+                    Element.column
+                        [ contentWidth, Element.centerX, Element.spacing 32 ]
+                        [ Element.paragraph
+                            []
+                            [ Element.text "Answering with "
+                            , Element.el
+                                [ Element.Font.bold ]
+                                (Element.text (EmailAddress.toString answeringSurvey2.emailAddress))
+                            ]
+                        , List.Nonempty.toList answeringSurvey2.answers
+                            |> List.indexedMap answerQuestionView
+                            |> Element.column [ Element.spacing 16 ]
+                        , button
+                            buttonAttributes
+                            PressedSubmitSurvey
+                            ("Submit survey"
+                                ++ (if unansweredQuestions2 > 0 then
+                                        " (" ++ String.fromInt unansweredQuestions2 ++ " questions skipped)"
+
+                                    else
+                                        ""
+                                   )
+                                |> Element.text
+                            )
+                        ]
 
                 SubmittedSurvey ->
                     Element.paragraph
@@ -365,10 +434,33 @@ view model =
                     let
                         showRemoveButton =
                             List.Nonempty.length creatingSurvey2.questions > 1
+
+                        showError result =
+                            case ( creatingSurvey2.submitState, result ) of
+                                ( NotSubmitted HasPressedSubmit, Err error ) ->
+                                    Element.paragraph
+                                        [ Element.Font.color (Element.rgb 1 0 0)
+                                        , Element.Font.size 16
+                                        ]
+                                        [ Element.text error ]
+
+                                _ ->
+                                    Element.none
                     in
                     Element.column
                         [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
                         [ title "Create a survey"
+                        , Element.column
+                            [ Element.width Element.fill, Element.spacing 4 ]
+                            [ Element.Input.text
+                                []
+                                { onChange = TypedSurveyName
+                                , text = creatingSurvey2.surveyName
+                                , placeholder = Nothing
+                                , label = Element.Input.labelAbove [ Element.Font.bold ] (Element.text "Survey name")
+                                }
+                            , showError (validateSurveyName creatingSurvey2.surveyName)
+                            ]
                         , Element.column
                             [ Element.spacing 32, Element.width Element.fill ]
                             [ Element.column
@@ -380,27 +472,25 @@ view model =
                             , button buttonAttributes PressedAddQuestion (Element.text "Add new question")
                             ]
                         , Element.column
-                            [ Element.spacing 4 ]
+                            [ Element.spacing 4, Element.width Element.fill ]
                             [ Element.Input.text
                                 []
                                 { onChange = TypedEmailTo
                                 , text = creatingSurvey2.emailTo
-                                , placeholder = Nothing
+                                , placeholder =
+                                    Element.text "johnz@example.com, bob@bob.com, jane123@mail.com"
+                                        |> Element.Input.placeholder []
+                                        |> Just
                                 , label =
                                     Element.Input.labelAbove
                                         []
                                         (Element.paragraph
-                                            []
-                                            [ Element.text "List the people you want this survey emailed to. Separate each email with a comma (i.e. john.doe@example.com, bob-smith@bob.com, jane123@mail.com)"
+                                            [ Element.Font.bold ]
+                                            [ Element.text "List the people you want this survey emailed to. Comma separate each email."
                                             ]
                                         )
                                 }
-                            , case ( creatingSurvey2.submitState, validateEmails creatingSurvey2.emailTo ) of
-                                ( NotSubmitted HasPressedSubmit, Err error ) ->
-                                    Element.paragraph [ Element.Font.color (Element.rgb 1 0 0) ] [ Element.text error ]
-
-                                _ ->
-                                    Element.none
+                            , showError (validateEmails creatingSurvey2.emailTo)
                             ]
                         , button
                             buttonAttributes
@@ -412,14 +502,27 @@ view model =
                 SurveyOverviewAdmin _ survey ->
                     Element.column
                         [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
-                        [ title "Survey results"
+                        [ title ("Survey results for " ++ SurveyName.toString survey.title)
                         , Element.column
                             [ Element.spacing 16 ]
                             (List.map questionResultView (List.Nonempty.toList survey.questions))
                         ]
 
-                LoadingSurveyFailed loadSurveyError ->
-                    Element.text ""
+                LoadingSurveyFailed error ->
+                    Element.column
+                        [ Element.spacing 16, Element.centerX, Element.centerY ]
+                        [ Element.paragraph
+                            [ Element.Font.size 26 ]
+                            [ (case error of
+                                InvalidSurveyLink ->
+                                    "Survey doesn't exist or you don't have access to it."
+
+                                SurveyAlreadySubmitted ->
+                                    "Your survey has already been submitted."
+                              )
+                                |> Element.text
+                            ]
+                        ]
             )
         ]
     }
@@ -427,14 +530,14 @@ view model =
 
 title : String -> Element msg
 title text =
-    Element.paragraph [ Element.Font.size 24, Element.Font.bold ] [ Element.text text ]
+    Element.paragraph [ Element.Font.size 26, Element.Font.bold ] [ Element.text text ]
 
 
 questionResultView : SurveyQuestion -> Element msg
 questionResultView { question, answers } =
     Element.column
         [ Element.width Element.fill, Element.spacing 8 ]
-        [ Element.paragraph [ Element.Font.bold ] [ Element.text question ]
+        [ whiteSpaceParagraph question |> Element.el [ Element.Font.bold ]
         , if Dict.isEmpty answers then
             Element.paragraph
                 [ Element.Font.italic, Element.Font.color (Element.rgb 0.3 0.3 0.3), Element.Font.size 16 ]
@@ -452,6 +555,14 @@ questionResultView { question, answers } =
                 (Dict.toList answers)
                 |> Element.column [ Element.spacing 16, Element.width Element.fill ]
         ]
+
+
+whiteSpaceParagraph : String -> Element msg
+whiteSpaceParagraph text =
+    Html.div
+        [ Html.Attributes.style "white-space" "pre-wrap" ]
+        [ Html.text text ]
+        |> Element.html
 
 
 buttonAttributes : List (Element.Attribute msg)
