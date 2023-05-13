@@ -30,6 +30,7 @@ type FrontendState
     | CreatingSurvey CreatingSurvey2
     | SurveyOverviewAdmin (Id SurveyId) FrontendSurvey
     | LoadingSurveyFailed LoadSurveyError
+    | PrivacyPage
 
 
 type alias AnsweringSurvey2 =
@@ -39,6 +40,7 @@ type alias AnsweringSurvey2 =
     , title : SurveyName
     , answers : Nonempty { question : String, answer : String }
     , submitState : SubmitState ()
+    , creationTime : Time.Posix
     }
 
 
@@ -104,7 +106,7 @@ type LoadSurveyError
 
 type ToFrontend
     = SubmitSurveyResponse
-    | CreateSurveyResponse (Id SurveyId) (Id UserToken) (Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } ))
+    | CreateSurveyResponse (Id SurveyId) (Id UserToken) (Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )) Time.Posix
     | LoadSurveyResponse
         (Result
             LoadSurveyError
@@ -113,6 +115,7 @@ type ToFrontend
             , emailAddress : EmailAddress
             , surveyName : SurveyName
             , questions : Nonempty { question : String }
+            , creationTime : Time.Posix
             }
         )
     | LoadSurveyAdminResponse (Id SurveyId) (Result () FrontendSurvey)

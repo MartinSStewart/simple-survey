@@ -248,7 +248,7 @@ updateFromFrontendWithTime time sessionId clientId msg model =
                         model7.surveys
               }
             , Command.batch
-                [ Effect.Lamdera.sendToFrontend clientId (CreateSurveyResponse surveyId userToken emailTo2)
+                [ Effect.Lamdera.sendToFrontend clientId (CreateSurveyResponse surveyId userToken emailTo2 time)
                 , emails
                 ]
             )
@@ -262,6 +262,7 @@ updateFromFrontendWithTime time sessionId clientId msg model =
                         , questions = survey.questions
                         , emailedTo = survey.emailedTo
                         , owner = survey.owner
+                        , creationTime = survey.creationTime
                         }
                             |> Ok
                             |> LoadSurveyAdminResponse surveyId
@@ -278,6 +279,7 @@ updateFromFrontendWithTime time sessionId clientId msg model =
                                     , emailAddress = email
                                     , surveyName = survey.title
                                     , questions = List.Nonempty.map (\{ question } -> { question = question }) survey.questions
+                                    , creationTime = survey.creationTime
                                     }
                                         |> Ok
                                         |> LoadSurveyResponse
