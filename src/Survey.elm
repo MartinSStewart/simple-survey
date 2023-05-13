@@ -8,6 +8,7 @@ import List.Nonempty exposing (Nonempty)
 import Postmark exposing (PostmarkSendResponse)
 import String.Nonempty exposing (NonemptyString)
 import SurveyName exposing (SurveyName)
+import Time
 
 
 type alias BackendSurvey =
@@ -15,6 +16,7 @@ type alias BackendSurvey =
     , questions : Nonempty SurveyQuestion
     , emailedTo : Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )
     , owner : Id UserToken
+    , creationTime : Time.Posix
     }
 
 

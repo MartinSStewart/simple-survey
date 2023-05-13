@@ -4,6 +4,8 @@ import AssocList as Dict
 import Effect.Command as Command exposing (BackendOnly, Command)
 import Effect.Lamdera exposing (ClientId, SessionId)
 import Effect.Subscription as Subscription exposing (Subscription)
+import Effect.Task as Task
+import Effect.Time as Time
 import Email.Html
 import Email.Html.Attributes
 import Env
@@ -40,7 +42,7 @@ init =
     )
 
 
-update : BackendMsg -> BackendModel -> ( BackendModel, Command restriction toMsg BackendMsg )
+update : BackendMsg -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 update msg model =
     case msg of
         SurveyEmailSent surveyId emailAddress result ->
@@ -79,6 +81,9 @@ update msg model =
             , Command.none
             )
 
+        GotTime time sessionId clientId toBackend ->
+            updateFromFrontendWithTime time sessionId clientId toBackend model
+
 
 surveyEmail :
     SurveyName.SurveyName
@@ -102,6 +107,7 @@ surveyEmail surveyName surveyId userToken =
                 ]
                 [ Email.Html.text "Click here to view it." ]
             , Email.Html.br [] []
+            , Email.Html.br [] []
             , Email.Html.text "If you don't recognize this survey then we recommend not filling it out."
             ]
     , textBody = ""
@@ -115,6 +121,17 @@ updateFromFrontend :
     -> BackendModel
     -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 updateFromFrontend sessionId clientId msg model =
+    ( model, Time.now |> Task.perform (\time -> GotTime time sessionId clientId msg) )
+
+
+updateFromFrontendWithTime :
+    Time.Posix
+    -> SessionId
+    -> ClientId
+    -> ToBackend
+    -> BackendModel
+    -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
+updateFromFrontendWithTime time sessionId clientId msg model =
     case msg of
         SubmitSurveyRequest surveyId userToken answers ->
             case IdDict.get surveyId model.surveys of
@@ -225,6 +242,7 @@ updateFromFrontend sessionId clientId msg model =
                                 questions
                         , emailedTo = emailTo2
                         , owner = userToken
+                        , creationTime = time
                         }
                         model7.surveys
               }

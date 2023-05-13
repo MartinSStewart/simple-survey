@@ -4,6 +4,7 @@ import AssocList exposing (Dict)
 import Browser exposing (UrlRequest)
 import Effect.Browser.Navigation
 import Effect.Http as Http
+import Effect.Lamdera exposing (ClientId, SessionId)
 import EmailAddress exposing (EmailAddress)
 import Id exposing (Id, SurveyId, UserToken)
 import IdDict exposing (IdDict)
@@ -12,6 +13,7 @@ import Postmark exposing (PostmarkSendResponse)
 import String.Nonempty exposing (NonemptyString)
 import Survey exposing (BackendSurvey, EmailStatus, FrontendSurvey)
 import SurveyName exposing (SurveyName)
+import Time
 import Url exposing (Url)
 
 
@@ -92,6 +94,7 @@ type ToBackend
 
 type BackendMsg
     = SurveyEmailSent (Id SurveyId) EmailAddress (Result Http.Error PostmarkSendResponse)
+    | GotTime Time.Posix SessionId ClientId ToBackend
 
 
 type LoadSurveyError
