@@ -498,7 +498,11 @@ view model =
                             , showError (validateSurveyName creatingSurvey2.surveyName)
                             ]
                         , Element.column
-                            [ Element.spacing 32, Element.width Element.fill ]
+                            [ Element.spacing 32
+                            , Element.width Element.fill
+                            , Element.Border.width 1
+                            , Element.paddingEach { left = 16, right = 16, top = 16, bottom = 24 }
+                            ]
                             [ Element.column
                                 [ Element.spacing 16, Element.width Element.fill ]
                                 (List.indexedMap
@@ -542,11 +546,7 @@ view model =
                             List.filterMap
                                 (\( _, { email, emailStatus } ) ->
                                     case emailStatus of
-                                        EmailSuccess postmarkResponse ->
-                                            let
-                                                _ =
-                                                    Debug.log "a" postmarkResponse
-                                            in
+                                        EmailSuccess ->
                                             EmailAddress.toString email |> Element.text |> Just
 
                                         EmailError _ ->
@@ -598,10 +598,10 @@ view model =
 
                           else
                             Element.column
-                                [ Element.Font.color (Element.rgb 1 0 0), Element.spacing 16 ]
-                                [ Element.text "Failed to email invites to the following people:"
+                                [ Element.Font.color (Element.rgb 1 0 0), Element.spacing 16, Element.width Element.fill ]
+                                [ Element.paragraph [] [ Element.text "Failed to email invites to the following people:" ]
                                 , Element.table
-                                    [ Element.Border.width 1, Element.padding 8 ]
+                                    [ Element.Border.width 1, Element.padding 8, Element.width Element.fill ]
                                     { data = failedEmails
                                     , columns =
                                         [ { header = Element.el [ Element.paddingXY 12 8, Element.Font.bold ] (Element.text "Email")
@@ -612,8 +612,11 @@ view model =
                                                         |> Element.text
                                                         |> Element.el [ Element.paddingXY 12 8, Element.Font.size 16 ]
                                           }
-                                        , { header = Element.el [ Element.paddingXY 12 8, Element.Font.bold ] (Element.text "Invite link (you'll need to manually send these)")
-                                          , width = Element.shrink
+                                        , { header =
+                                                Element.paragraph
+                                                    [ Element.paddingXY 12 8, Element.Font.bold ]
+                                                    [ Element.text "Invite link (you'll\u{00A0}need\u{00A0}to\u{00A0}manually\u{00A0}send\u{00A0}these)" ]
+                                          , width = Element.fill
                                           , view =
                                                 \( _, userToken ) ->
                                                     (Env.domain ++ Route.encode (Route.ViewSurvey surveyId userToken))
@@ -716,25 +719,35 @@ editQuestionView showRemoveButton index text =
                     (Element.text ("Question " ++ String.fromInt (index + 1)))
             , spellcheck = True
             }
-        , Element.row
-            [ Element.moveDown 8 ]
-            [ Element.row
-                []
-                [ button [ Element.paddingXY 12 8 ] (PressedMoveDownQuestion index) (Element.text "▼")
-                , button [ Element.paddingXY 12 8 ] (PressedMoveUpQuestion index) (Element.text "▲")
-                ]
-            , if showRemoveButton then
-                button
+        , if showRemoveButton then
+            Element.row
+                [ Element.moveDown 26, Element.alignTop, Element.spacing 8 ]
+                [ Element.row
+                    []
+                    [ button
+                        [ Element.paddingXY 12 8
+                        , Element.Background.color (Element.rgb 0.9 0.9 0.9)
+                        ]
+                        (PressedMoveDownQuestion index)
+                        (Element.text "▼")
+                    , button
+                        [ Element.paddingXY 12 8
+                        , Element.Background.color (Element.rgb 0.9 0.9 0.9)
+                        ]
+                        (PressedMoveUpQuestion index)
+                        (Element.text "▲")
+                    ]
+                , button
                     [ Element.Background.color (Element.rgb 1 0 0)
                     , Element.Font.color (Element.rgb 1 1 1)
                     , Element.paddingXY 12 8
                     ]
                     (PressedRemoveQuestion index)
                     (Element.text "×")
+                ]
 
-              else
-                Element.none
-            ]
+          else
+            Element.none
         ]
 
 

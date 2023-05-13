@@ -33,8 +33,8 @@ type alias SurveyQuestion =
 
 type EmailStatus
     = SendingEmail
-    | EmailError Http.Error
-    | EmailSuccess PostmarkSendResponse
+    | EmailError Postmark.Error
+    | EmailSuccess
 
 
 hasSubmitted : EmailAddress -> { a | questions : Nonempty SurveyQuestion } -> Bool

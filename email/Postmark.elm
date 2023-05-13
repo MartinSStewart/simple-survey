@@ -1,5 +1,6 @@
 module Postmark exposing
     ( ApiKey
+    , Error(..)
     , PostmarkEmailBody(..)
     , PostmarkSend
     , PostmarkSendResponse
@@ -59,7 +60,18 @@ type alias PostmarkSend =
     }
 
 
-sendEmailTask : ApiKey -> PostmarkSend -> Effect.Task.Task restriction Effect.Http.Error PostmarkSendResponse
+{-| Possible error codes we might get back when trying to send an email.
+Some are just normal HTTP errors and others are specific to the Postmark API.
+-}
+type Error
+    = UnknownError { statusCode : Int, body : String }
+    | PostmarkError { errorCode : Int, message : String }
+    | NetworkError
+    | Timeout
+    | BadUrl String
+
+
+sendEmailTask : ApiKey -> PostmarkSend -> Effect.Task.Task restriction Error ()
 sendEmailTask (ApiKey token) d =
     let
         httpBody =
@@ -83,7 +95,7 @@ sendEmailTask (ApiKey token) d =
 
 
 sendEmail :
-    (Result Effect.Http.Error PostmarkSendResponse -> msg)
+    (Result Error () -> msg)
     -> ApiKey
     -> PostmarkSend
     -> Command restriction toMsg msg
@@ -109,20 +121,14 @@ emailToString address =
 
 
 type alias PostmarkSendResponse =
-    { to : String
-    , submittedAt : String
-    , messageId : String
-    , errorCode : Int
+    { errorCode : Int
     , message : String
     }
 
 
 decodePostmarkSendResponse : D.Decoder PostmarkSendResponse
 decodePostmarkSendResponse =
-    D.map5 PostmarkSendResponse
-        (D.field "To" D.string)
-        (D.field "SubmittedAt" D.string)
-        (D.field "MessageID" D.string)
+    D.map2 PostmarkSendResponse
         (D.field "ErrorCode" D.int)
         (D.field "Message" D.string)
 
@@ -141,7 +147,7 @@ type alias PostmarkTemplateSend =
     }
 
 
-sendTemplateEmail : PostmarkTemplateSend -> Effect.Task.Task restriction Effect.Http.Error PostmarkTemplateSendResponse
+sendTemplateEmail : PostmarkTemplateSend -> Effect.Task.Task restriction Error ()
 sendTemplateEmail d =
     let
         httpBody =
@@ -165,20 +171,14 @@ sendTemplateEmail d =
 
 
 type alias PostmarkTemplateSendResponse =
-    { to : String
-    , submittedAt : String
-    , messageID : String
-    , errorCode : String
+    { errorCode : Int
     , message : String
     }
 
 
 decodePostmarkTemplateSendResponse =
-    D.map5 PostmarkTemplateSendResponse
-        (D.field "To" D.string)
-        (D.field "SubmittedAt" D.string)
-        (D.field "MessageID" D.string)
-        (D.field "ErrorCode" D.string)
+    D.map2 PostmarkTemplateSendResponse
+        (D.field "ErrorCode" D.int)
         (D.field "Message" D.string)
 
 
@@ -201,24 +201,32 @@ bodyToJsonValues body =
             ]
 
 
-jsonResolver : D.Decoder a -> Effect.Http.Resolver restriction Effect.Http.Error a
+jsonResolver : D.Decoder { a | errorCode : Int, message : String } -> Effect.Http.Resolver restriction Error ()
 jsonResolver decoder =
-    Effect.Http.stringResolver <|
-        \response ->
+    Effect.Http.stringResolver
+        (\response ->
             case response of
-                Effect.Http.GoodStatus_ _ body ->
-                    D.decodeString decoder body
-                        |> Result.mapError D.errorToString
-                        |> Result.mapError Effect.Http.BadBody
+                Effect.Http.GoodStatus_ metadata body ->
+                    case D.decodeString decoder body of
+                        Ok json ->
+                            if json.errorCode == 0 then
+                                Ok ()
+
+                            else
+                                PostmarkError { errorCode = json.errorCode, message = json.message } |> Err
+
+                        Err _ ->
+                            UnknownError { statusCode = metadata.statusCode, body = body } |> Err
 
                 Effect.Http.BadUrl_ message ->
-                    Err (Effect.Http.BadUrl message)
+                    Err (BadUrl message)
 
                 Effect.Http.Timeout_ ->
-                    Err Effect.Http.Timeout
+                    Err Timeout
 
                 Effect.Http.NetworkError_ ->
-                    Err Effect.Http.NetworkError
+                    Err NetworkError
 
-                Effect.Http.BadStatus_ metadata _ ->
-                    Err (Effect.Http.BadStatus metadata.statusCode)
+                Effect.Http.BadStatus_ metadata body ->
+                    Err (UnknownError { statusCode = metadata.statusCode, body = body })
+        )

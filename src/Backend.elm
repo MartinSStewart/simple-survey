@@ -61,8 +61,8 @@ update msg model =
                                                     , { email = email
                                                       , emailStatus =
                                                             case result of
-                                                                Ok ok ->
-                                                                    EmailSuccess ok
+                                                                Ok () ->
+                                                                    EmailSuccess
 
                                                                 Err error ->
                                                                     EmailError error
