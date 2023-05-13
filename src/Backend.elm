@@ -228,9 +228,6 @@ updateFromFrontendWithTime time sessionId clientId msg model =
                                 let
                                     { subject, htmlBody, textBody } =
                                         surveyEmail surveyName surveyId userToken3
-
-                                    _ =
-                                        Debug.log "login" (Env.domain ++ Route.encode (Route.ViewSurvey surveyId userToken3))
                                 in
                                 Postmark.sendEmail
                                     (SurveyEmailSent surveyId email)
