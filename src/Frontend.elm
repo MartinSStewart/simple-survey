@@ -2,7 +2,6 @@ module Frontend exposing (..)
 
 import AssocList as Dict
 import Browser exposing (UrlRequest(..))
-import Browser.Navigation
 import Effect.Browser.Navigation
 import Effect.Command as Command exposing (Command, FrontendOnly)
 import Effect.Lamdera
@@ -13,14 +12,16 @@ import Element.Border
 import Element.Font
 import Element.Input
 import EmailAddress exposing (EmailAddress)
+import Env
 import Html
 import Html.Attributes
-import IdDict
+import Id exposing (Id, UserToken)
 import Lamdera
 import List.Extra as List
 import List.Nonempty exposing (Nonempty(..))
-import Route exposing (Route)
+import Route exposing (Route(..))
 import String.Nonempty
+import Survey exposing (EmailStatus(..), SurveyQuestion)
 import SurveyName exposing (Error(..), SurveyName)
 import Types exposing (..)
 import Url
@@ -47,23 +48,41 @@ init url key =
         route =
             Url.Parser.parse Route.decode url
                 |> Maybe.withDefault Route.CreateSurvey
+
+        ( newState, cmd ) =
+            routeChanged
+                route
+                (CreatingSurvey
+                    { surveyName = ""
+                    , questions = Nonempty "" []
+                    , submitState = NotSubmitted HasNotPressedSubmit
+                    , emailTo = ""
+                    }
+                )
     in
+    ( { key = key, state = newState }, cmd )
+
+
+routeChanged : Route -> FrontendState -> ( FrontendState, Command FrontendOnly ToBackend FrontendMsg )
+routeChanged route state =
     case route of
-        Route.CreateSurvey ->
-            ( { key = key
-              , state =
-                    CreatingSurvey
+        CreateSurvey ->
+            case state of
+                CreatingSurvey _ ->
+                    ( state, Command.none )
+
+                _ ->
+                    ( CreatingSurvey
                         { surveyName = ""
                         , questions = Nonempty "" []
                         , submitState = NotSubmitted HasNotPressedSubmit
                         , emailTo = ""
                         }
-              }
-            , Command.none
-            )
+                    , Command.none
+                    )
 
-        Route.ViewSurvey surveyId userToken ->
-            ( { key = key, state = LoadingSurvey surveyId userToken }
+        ViewSurvey surveyId userToken ->
+            ( LoadingSurvey surveyId userToken
             , LoadSurveyRequest surveyId userToken |> Effect.Lamdera.sendToBackend
             )
 
@@ -84,7 +103,16 @@ update msg model =
                     )
 
         UrlChanged url ->
-            ( model, Command.none )
+            let
+                route : Route
+                route =
+                    Url.Parser.parse Route.decode url
+                        |> Maybe.withDefault Route.CreateSurvey
+
+                ( state, cmd ) =
+                    routeChanged route model.state
+            in
+            ( { model | state = state }, cmd )
 
         PressedSubmitSurvey ->
             case model.state of
@@ -377,7 +405,7 @@ answerQuestionView index { question, answer } =
         { onChange = TypedAnswer index
         , text = answer
         , placeholder = Nothing
-        , label = Element.Input.labelAbove [] (whiteSpaceParagraph question)
+        , label = Element.Input.labelAbove [ Element.Font.bold ] (whiteSpaceParagraph question)
         , spellcheck = True
         }
 
@@ -393,41 +421,50 @@ view model =
                     Element.text "Loading..."
 
                 AnsweringSurvey answeringSurvey2 ->
-                    let
-                        unansweredQuestions2 : Int
-                        unansweredQuestions2 =
-                            unansweredQuestions answeringSurvey2.answers
-                    in
                     Element.column
-                        [ contentWidth, Element.centerX, Element.spacing 32 ]
-                        [ Element.paragraph
+                        [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
+                        [ title (SurveyName.toString answeringSurvey2.title)
+                        , Element.paragraph
                             []
-                            [ Element.text "Answering with "
+                            [ Element.text "Answering as "
                             , Element.el
                                 [ Element.Font.bold ]
                                 (Element.text (EmailAddress.toString answeringSurvey2.emailAddress))
                             ]
                         , List.Nonempty.toList answeringSurvey2.answers
                             |> List.indexedMap answerQuestionView
-                            |> Element.column [ Element.spacing 16 ]
+                            |> Element.column [ Element.spacing 16, Element.width Element.fill ]
                         , button
                             buttonAttributes
                             PressedSubmitSurvey
-                            ("Submit survey"
-                                ++ (if unansweredQuestions2 > 0 then
-                                        " (" ++ String.fromInt unansweredQuestions2 ++ " questions skipped)"
+                            ((case answeringSurvey2.submitState of
+                                NotSubmitted _ ->
+                                    "Submit survey"
+                                        ++ (case unansweredQuestions answeringSurvey2.answers of
+                                                0 ->
+                                                    ""
 
-                                    else
-                                        ""
-                                   )
+                                                1 ->
+                                                    " (1 question skipped)"
+
+                                                count ->
+                                                    " (" ++ String.fromInt count ++ " questions skipped)"
+                                           )
+
+                                Submitting _ ->
+                                    "Submitting"
+                             )
                                 |> Element.text
                             )
                         ]
 
                 SubmittedSurvey ->
-                    Element.paragraph
-                        [ Element.centerX, Element.centerY ]
-                        [ Element.text "Survey successfully submitted. Thanks!" ]
+                    Element.el
+                        [ Element.centerX, Element.centerY, Element.padding 16 ]
+                        (Element.paragraph
+                            []
+                            [ Element.text "Survey successfully submitted. Thanks!" ]
+                        )
 
                 CreatingSurvey creatingSurvey2 ->
                     let
@@ -498,18 +535,101 @@ view model =
                         ]
                         |> Element.map CreateSurveyMsg
 
-                SurveyOverviewAdmin _ survey ->
+                SurveyOverviewAdmin surveyId survey ->
+                    let
+                        successfulEmails : List (Element msg)
+                        successfulEmails =
+                            List.filterMap
+                                (\( _, { email, emailStatus } ) ->
+                                    case emailStatus of
+                                        EmailSuccess postmarkResponse ->
+                                            let
+                                                _ =
+                                                    Debug.log "a" postmarkResponse
+                                            in
+                                            EmailAddress.toString email |> Element.text |> Just
+
+                                        EmailError _ ->
+                                            if Survey.hasSubmitted email survey then
+                                                EmailAddress.toString email |> Element.text |> Just
+
+                                            else
+                                                Nothing
+
+                                        SendingEmail ->
+                                            Nothing
+                                )
+                                (List.Nonempty.toList survey.emailedTo)
+
+                        failedEmails : List ( EmailAddress, Id UserToken )
+                        failedEmails =
+                            List.filterMap
+                                (\( userToken, { email, emailStatus } ) ->
+                                    case emailStatus of
+                                        EmailError _ ->
+                                            if Survey.hasSubmitted email survey then
+                                                Nothing
+
+                                            else
+                                                Just ( email, userToken )
+
+                                        _ ->
+                                            Nothing
+                                )
+                                (List.Nonempty.toList survey.emailedTo)
+                    in
                     Element.column
                         [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
                         [ title ("Survey results for " ++ SurveyName.toString survey.title)
                         , Element.column
                             [ Element.spacing 16 ]
                             (List.map questionResultView (List.Nonempty.toList survey.questions))
+                        , if List.isEmpty successfulEmails then
+                            Element.none
+
+                          else
+                            Element.paragraph
+                                [ Element.Font.size 16 ]
+                                (Element.text "Invites sent successfully to "
+                                    :: successfulEmails
+                                )
+                        , if List.isEmpty failedEmails then
+                            Element.none
+
+                          else
+                            Element.column
+                                [ Element.Font.color (Element.rgb 1 0 0), Element.spacing 16 ]
+                                [ Element.text "Failed to email invites to the following people:"
+                                , Element.table
+                                    [ Element.Border.width 1, Element.padding 8 ]
+                                    { data = failedEmails
+                                    , columns =
+                                        [ { header = Element.el [ Element.paddingXY 12 8, Element.Font.bold ] (Element.text "Email")
+                                          , width = Element.shrink
+                                          , view =
+                                                \( email, _ ) ->
+                                                    EmailAddress.toString email
+                                                        |> Element.text
+                                                        |> Element.el [ Element.paddingXY 12 8, Element.Font.size 16 ]
+                                          }
+                                        , { header = Element.el [ Element.paddingXY 12 8, Element.Font.bold ] (Element.text "Invite link (you'll need to manually send these)")
+                                          , width = Element.shrink
+                                          , view =
+                                                \( _, userToken ) ->
+                                                    (Env.domain ++ Route.encode (Route.ViewSurvey surveyId userToken))
+                                                        |> Element.text
+                                                        |> Element.el [ Element.paddingXY 12 8, Element.Font.size 16 ]
+                                          }
+                                        ]
+                                    }
+
+                                --|> Element.column [ Element.spacing 8, Element.Font.size 16 ]
+                                ]
                         ]
 
                 LoadingSurveyFailed error ->
                     Element.column
-                        [ Element.spacing 16, Element.centerX, Element.centerY ]
+                        [ Element.spacing 16, Element.centerX, Element.centerY, Element.padding 16 ]
                         [ Element.paragraph
                             [ Element.Font.size 26 ]
                             [ (case error of
@@ -546,9 +666,9 @@ questionResultView { question, answers } =
             List.map
                 (\( emailAddress, answer ) ->
                     Element.row
-                        [ Element.width Element.fill ]
-                        [ Element.el [ Element.Font.bold, Element.Font.size 16 ] (Element.text (EmailAddress.toString emailAddress))
-                        , Element.paragraph [ Element.Font.size 16 ] [ Element.text (String.Nonempty.toString answer) ]
+                        [ Element.width Element.fill, Element.spacing 16, Element.Font.size 16 ]
+                        [ Element.el [ Element.Font.bold ] (Element.text (EmailAddress.toString emailAddress))
+                        , String.Nonempty.toString answer |> whiteSpaceParagraph |> Element.el []
                         ]
                 )
                 (Dict.toList answers)

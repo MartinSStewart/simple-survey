@@ -2,16 +2,12 @@ module Backend exposing (..)
 
 import AssocList as Dict
 import Effect.Command as Command exposing (BackendOnly, Command)
-import Effect.Http as Http
 import Effect.Lamdera exposing (ClientId, SessionId)
 import Effect.Subscription as Subscription exposing (Subscription)
-import Effect.Task as Task exposing (Task)
 import Email.Html
 import Email.Html.Attributes
-import EmailAddress exposing (EmailAddress)
 import Env
 import Hex
-import Html
 import Id exposing (Id, SurveyId, UserToken)
 import IdDict
 import Lamdera
@@ -20,6 +16,7 @@ import List.Nonempty exposing (Nonempty(..))
 import Postmark
 import Route
 import String.Nonempty exposing (NonemptyString(..))
+import Survey exposing (EmailStatus(..))
 import SurveyName
 import Types exposing (..)
 import Unsafe
@@ -201,6 +198,9 @@ updateFromFrontend sessionId clientId msg model =
                                 let
                                     { subject, htmlBody, textBody } =
                                         surveyEmail surveyName surveyId userToken3
+
+                                    _ =
+                                        Debug.log "login" (Env.domain ++ Route.encode (Route.ViewSurvey surveyId userToken3))
                                 in
                                 Postmark.sendEmail
                                     (SurveyEmailSent surveyId email)
@@ -249,7 +249,10 @@ updateFromFrontend sessionId clientId msg model =
                     else
                         case nonemptyGet userToken survey.emailedTo of
                             Just { email } ->
-                                if hasSubmitted email survey then
+                                if Survey.hasSubmitted email survey then
+                                    LoadSurveyResponse (Err SurveyAlreadySubmitted)
+
+                                else
                                     { surveyId = surveyId
                                     , userToken = userToken
                                     , emailAddress = email
@@ -258,9 +261,6 @@ updateFromFrontend sessionId clientId msg model =
                                     }
                                         |> Ok
                                         |> LoadSurveyResponse
-
-                                else
-                                    LoadSurveyResponse (Err InvalidSurveyLink)
 
                             Nothing ->
                                 LoadSurveyResponse (Err InvalidSurveyLink)
@@ -287,8 +287,3 @@ nonemptyGet a nonempty =
                 else
                     Nothing
             )
-
-
-hasSubmitted : EmailAddress -> BackendSurvey -> Bool
-hasSubmitted emailAddress survey =
-    List.Nonempty.any (\{ answers } -> Dict.keys answers |> List.any ((==) emailAddress)) survey.questions

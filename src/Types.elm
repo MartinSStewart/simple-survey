@@ -10,6 +10,7 @@ import IdDict exposing (IdDict)
 import List.Nonempty exposing (Nonempty)
 import Postmark exposing (PostmarkSendResponse)
 import String.Nonempty exposing (NonemptyString)
+import Survey exposing (BackendSurvey, EmailStatus, FrontendSurvey)
 import SurveyName exposing (SurveyName)
 import Url exposing (Url)
 
@@ -62,31 +63,6 @@ type alias BackendModel =
     , secretCounter : Int
     , surveyIdCounter : Int
     }
-
-
-type alias BackendSurvey =
-    { title : SurveyName
-    , questions : Nonempty SurveyQuestion
-    , emailedTo : Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )
-    , owner : Id UserToken
-    }
-
-
-type alias FrontendSurvey =
-    { title : SurveyName
-    , questions : Nonempty SurveyQuestion
-    , emailedTo : Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )
-    }
-
-
-type EmailStatus
-    = SendingEmail
-    | EmailError Http.Error
-    | EmailSuccess PostmarkSendResponse
-
-
-type alias SurveyQuestion =
-    { question : String, answers : Dict EmailAddress NonemptyString }
 
 
 type FrontendMsg
