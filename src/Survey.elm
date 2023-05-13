@@ -24,6 +24,7 @@ type alias FrontendSurvey =
     { title : SurveyName
     , questions : Nonempty SurveyQuestion
     , emailedTo : Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )
+    , owner : Id UserToken
     }
 
 

@@ -91,6 +91,10 @@ surveyEmail :
     -> Id UserToken
     -> { subject : NonemptyString, htmlBody : Email.Html.Html, textBody : String }
 surveyEmail surveyName surveyId userToken =
+    let
+        link =
+            Env.domain ++ Route.encode (Route.ViewSurvey surveyId userToken)
+    in
     { subject = SurveyName.toNonemptyString surveyName
     , htmlBody =
         Email.Html.div
@@ -101,16 +105,13 @@ surveyEmail surveyName surveyId userToken =
                 [ Email.Html.text (SurveyName.toString surveyName) ]
             , Email.Html.text " is ready for you to fill out. "
             , Email.Html.a
-                [ Env.domain
-                    ++ Route.encode (Route.ViewSurvey surveyId userToken)
-                    |> Email.Html.Attributes.href
-                ]
+                [ Email.Html.Attributes.href link ]
                 [ Email.Html.text "Click here to view it." ]
             , Email.Html.br [] []
             , Email.Html.br [] []
             , Email.Html.text "If you don't recognize this survey then we recommend not filling it out."
             ]
-    , textBody = ""
+    , textBody = "A survey titled \"" ++ SurveyName.toString surveyName ++ "\" is ready for you to fill out. Use this link to view it: " ++ link ++ ". If you don't recognize this survey then we recommend not filling it out."
     }
 
 
@@ -260,6 +261,7 @@ updateFromFrontendWithTime time sessionId clientId msg model =
                         { title = survey.title
                         , questions = survey.questions
                         , emailedTo = survey.emailedTo
+                        , owner = survey.owner
                         }
                             |> Ok
                             |> LoadSurveyAdminResponse surveyId

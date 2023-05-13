@@ -346,6 +346,7 @@ updateFromBackend msg model =
                                                 (\question -> { question = question, answers = Dict.empty })
                                                 questions
                                         , emailedTo = emailedTo
+                                        , owner = userToken
                                         }
                               }
                             , Effect.Browser.Navigation.pushUrl
@@ -433,7 +434,7 @@ view model =
                             ]
                         , List.Nonempty.toList answeringSurvey2.answers
                             |> List.indexedMap answerQuestionView
-                            |> Element.column [ Element.spacing 16, Element.width Element.fill ]
+                            |> Element.column [ Element.spacing 16, Element.width Element.fill, Element.Border.width 1, Element.paddingXY 16 24 ]
                         , button
                             buttonAttributes
                             PressedSubmitSurvey
@@ -460,7 +461,7 @@ view model =
 
                 SubmittedSurvey ->
                     Element.el
-                        [ Element.centerX, Element.centerY, Element.padding 16 ]
+                        [ Element.centerX, Element.centerY, Element.padding 16, Element.Font.size 26 ]
                         (Element.paragraph
                             []
                             [ Element.text "Survey successfully submitted. Thanks!" ]
@@ -547,11 +548,17 @@ view model =
                                 (\( _, { email, emailStatus } ) ->
                                     case emailStatus of
                                         EmailSuccess ->
-                                            EmailAddress.toString email |> Element.text |> Just
+                                            EmailAddress.toString email
+                                                |> Element.text
+                                                |> Element.el [ Element.Font.bold ]
+                                                |> Just
 
                                         EmailError _ ->
                                             if Survey.hasSubmitted email survey then
-                                                EmailAddress.toString email |> Element.text |> Just
+                                                EmailAddress.toString email
+                                                    |> Element.text
+                                                    |> Element.el [ Element.Font.bold ]
+                                                    |> Just
 
                                             else
                                                 Nothing
@@ -577,12 +584,26 @@ view model =
                                             Nothing
                                 )
                                 (List.Nonempty.toList survey.emailedTo)
+
+                        adminUrl =
+                            Env.domain ++ Route.encode (Route.ViewSurvey surveyId survey.owner)
                     in
                     Element.column
                         [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
                         [ title ("Survey results for " ++ SurveyName.toString survey.title)
+                        , Element.paragraph []
+                            [ Element.el [ Element.Font.bold ] (Element.text "Important!")
+                            , Element.text " Save this link so you can return to this page later: "
+                            , Element.link
+                                [ Element.Font.color (Element.rgb 0.2 0.3 1), Element.Font.underline ]
+                                { url = adminUrl, label = Element.text adminUrl }
+                            ]
                         , Element.column
-                            [ Element.spacing 16 ]
+                            [ Element.spacing 24
+                            , Element.Border.width 1
+                            , Element.padding 16
+                            , Element.width Element.fill
+                            ]
                             (List.map questionResultView (List.Nonempty.toList survey.questions))
                         , if List.isEmpty successfulEmails then
                             Element.none
@@ -591,7 +612,7 @@ view model =
                             Element.paragraph
                                 [ Element.Font.size 16 ]
                                 (Element.text "Invites sent successfully to "
-                                    :: successfulEmails
+                                    :: List.intersperse (Element.text ", ") successfulEmails
                                 )
                         , if List.isEmpty failedEmails then
                             Element.none
@@ -671,7 +692,9 @@ questionResultView { question, answers } =
                     Element.row
                         [ Element.width Element.fill, Element.spacing 16, Element.Font.size 16 ]
                         [ Element.el [ Element.Font.bold ] (Element.text (EmailAddress.toString emailAddress))
-                        , String.Nonempty.toString answer |> whiteSpaceParagraph |> Element.el []
+                        , String.Nonempty.toString answer
+                            |> whiteSpaceParagraph
+                            |> Element.el [ Element.width Element.fill ]
                         ]
                 )
                 (Dict.toList answers)
@@ -682,7 +705,7 @@ questionResultView { question, answers } =
 whiteSpaceParagraph : String -> Element msg
 whiteSpaceParagraph text =
     Html.div
-        [ Html.Attributes.style "white-space" "pre-wrap" ]
+        [ Html.Attributes.style "white-space" "pre-wrap", Html.Attributes.style "line-height" "120%" ]
         [ Html.text text ]
         |> Element.html
 
@@ -721,18 +744,20 @@ editQuestionView showRemoveButton index text =
             }
         , if showRemoveButton then
             Element.row
-                [ Element.moveDown 26, Element.alignTop, Element.spacing 8 ]
+                [ Element.moveDown 26, Element.alignTop, Element.spacing 4 ]
                 [ Element.row
                     []
                     [ button
-                        [ Element.paddingXY 12 8
+                        [ Element.paddingXY 12 12
                         , Element.Background.color (Element.rgb 0.9 0.9 0.9)
+                        , Element.Border.roundEach { topLeft = 4, topRight = 0, bottomLeft = 4, bottomRight = 0 }
                         ]
                         (PressedMoveDownQuestion index)
                         (Element.text "▼")
                     , button
-                        [ Element.paddingXY 12 8
+                        [ Element.paddingXY 12 12
                         , Element.Background.color (Element.rgb 0.9 0.9 0.9)
+                        , Element.Border.roundEach { topLeft = 0, topRight = 4, bottomLeft = 0, bottomRight = 4 }
                         ]
                         (PressedMoveUpQuestion index)
                         (Element.text "▲")
@@ -740,10 +765,11 @@ editQuestionView showRemoveButton index text =
                 , button
                     [ Element.Background.color (Element.rgb 1 0 0)
                     , Element.Font.color (Element.rgb 1 1 1)
-                    , Element.paddingXY 12 8
+                    , Element.paddingXY 12 12
+                    , Element.Border.rounded 4
                     ]
                     (PressedRemoveQuestion index)
-                    (Element.text "×")
+                    (Element.el [ Element.moveUp 1 ] (Element.text "🗙"))
                 ]
 
           else
