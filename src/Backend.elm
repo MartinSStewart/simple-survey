@@ -1,6 +1,7 @@
 module Backend exposing (..)
 
 import AssocList as Dict
+import Duration
 import Effect.Command as Command exposing (BackendOnly, Command)
 import Effect.Lamdera exposing (ClientId, SessionId)
 import Effect.Subscription as Subscription exposing (Subscription)
@@ -16,6 +17,7 @@ import Lamdera
 import List.Extra as List
 import List.Nonempty exposing (Nonempty(..))
 import Postmark
+import Quantity
 import Route
 import String.Nonempty exposing (NonemptyString(..))
 import Survey exposing (EmailStatus(..))
@@ -31,7 +33,7 @@ app =
         { init = init
         , update = update
         , updateFromFrontend = updateFromFrontend
-        , subscriptions = \m -> Subscription.none
+        , subscriptions = \m -> Time.every Duration.hour HourElapsed
         }
 
 
@@ -83,6 +85,16 @@ update msg model =
 
         GotTime time sessionId clientId toBackend ->
             updateFromFrontendWithTime time sessionId clientId toBackend model
+
+        HourElapsed time ->
+            ( { model
+                | surveys =
+                    IdDict.filter
+                        (\_ survey -> Duration.from survey.creationTime time |> Quantity.lessThan (Duration.days 90))
+                        model.surveys
+              }
+            , Command.none
+            )
 
 
 surveyEmail :

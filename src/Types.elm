@@ -97,6 +97,7 @@ type ToBackend
 type BackendMsg
     = SurveyEmailSent (Id SurveyId) EmailAddress (Result Postmark.Error ())
     | GotTime Time.Posix SessionId ClientId ToBackend
+    | HourElapsed Time.Posix
 
 
 type LoadSurveyError
