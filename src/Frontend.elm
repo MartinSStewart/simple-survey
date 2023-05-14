@@ -688,7 +688,7 @@ pageView state =
                     []
                     [ Element.text "The goal of this website is to allow people to create surveys without worrying that user data is being sent to 3rd parties or deal with the hassle of account creation."
                     ]
-                , Element.paragraph [] [ Element.text "Surveys questions, responses, and emails addresses are only visible to the person who created the survey and the website admin*. Surveys are also automatically deleted after 90 days." ]
+                , Element.paragraph [] [ Element.text "Survey questions, responses, and emails addresses are only visible to the person who created the survey and the website admin*. Surveys are also automatically deleted after 90 days." ]
                 , Element.paragraph []
                     [ Element.text "Additionally "
                     , Element.newTabLink
@@ -696,7 +696,7 @@ pageView state =
                         { url = "https://github.com/MartinSStewart/simple-survey"
                         , label = Element.text "this website is open source"
                         }
-                    , Element.text " so anyone can verify that these claims are true (bug reports, feature suggestions, and pull requests are also welcome)."
+                    , Element.text " so you can verify that these claims are true (bug reports, feature suggestions, and pull requests are also welcome)."
                     ]
                 , Element.paragraph
                     [ Element.Font.size 16 ]
