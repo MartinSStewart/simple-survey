@@ -210,7 +210,11 @@ validateEmails text =
         [] ->
             case List.Nonempty.fromList validEmails of
                 Just nonempty ->
-                    Ok nonempty
+                    if List.Nonempty.length nonempty > Survey.maxEmails then
+                        Err "Too many email addresses. Maximum 200."
+
+                    else
+                        Ok nonempty
 
                 Nothing ->
                     Err "Include at least one email address. Otherwise the survey won't be sent to anyone!"

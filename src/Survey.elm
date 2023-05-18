@@ -1,4 +1,4 @@
-module Survey exposing (BackendSurvey, EmailStatus(..), FrontendSurvey, SurveyQuestion, hasSubmitted)
+module Survey exposing (BackendSurvey, EmailStatus(..), FrontendSurvey, SurveyQuestion, hasSubmitted, maxEmails)
 
 import AssocList as Dict exposing (Dict)
 import Effect.Http as Http
@@ -42,3 +42,8 @@ type EmailStatus
 hasSubmitted : EmailAddress -> { a | questions : Nonempty SurveyQuestion } -> Bool
 hasSubmitted emailAddress survey =
     List.Nonempty.any (\{ answers } -> Dict.keys answers |> List.any ((==) emailAddress)) survey.questions
+
+
+maxEmails : number
+maxEmails =
+    200

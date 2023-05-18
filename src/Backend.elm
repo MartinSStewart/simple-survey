@@ -192,75 +192,79 @@ updateFromFrontendWithTime time sessionId clientId msg model =
                     ( model, Command.none )
 
         CreateSurveyRequest surveyName questions emailTo ->
-            let
-                ( model2, surveyId ) =
-                    ( { model | surveyIdCounter = model.surveyIdCounter + 1 }
-                    , Hex.toString model.surveyIdCounter |> Id.fromString
-                    )
+            if List.Nonempty.length emailTo > Survey.maxEmails then
+                ( model, Command.none )
 
-                ( model3, userToken ) =
-                    Id.getUniqueId model2
-
-                ( model4, userToken2 ) =
-                    Id.getUniqueId model3
-
-                ( model7, emailTo2 ) =
-                    List.foldl
-                        (\email ( model5, list ) ->
-                            let
-                                ( model6, userToken3 ) =
-                                    Id.getUniqueId model5
-                            in
-                            ( model6
-                            , List.Nonempty.cons ( userToken3, { email = email, emailStatus = SendingEmail } ) list
-                            )
+            else
+                let
+                    ( model2, surveyId ) =
+                        ( { model | surveyIdCounter = model.surveyIdCounter + 1 }
+                        , Hex.toString model.surveyIdCounter |> Id.fromString
                         )
-                        ( model4
-                        , Nonempty ( userToken2, { email = List.Nonempty.head emailTo, emailStatus = SendingEmail } ) []
-                        )
-                        (List.Nonempty.tail emailTo)
 
-                emails : Command restriction toMsg BackendMsg
-                emails =
-                    List.Nonempty.toList emailTo2
-                        |> List.map
-                            (\( userToken3, { email } ) ->
+                    ( model3, userToken ) =
+                        Id.getUniqueId model2
+
+                    ( model4, userToken2 ) =
+                        Id.getUniqueId model3
+
+                    ( model7, emailTo2 ) =
+                        List.foldl
+                            (\email ( model5, list ) ->
                                 let
-                                    { subject, htmlBody, textBody } =
-                                        surveyEmail surveyName surveyId userToken3
+                                    ( model6, userToken3 ) =
+                                        Id.getUniqueId model5
                                 in
-                                Postmark.sendEmail
-                                    (SurveyEmailSent surveyId email)
-                                    Env.postmarkApiKey
-                                    { from = { name = "Simple Survey", email = replyEmail }
-                                    , to = Nonempty { name = "", email = email } []
-                                    , subject = subject
-                                    , body = Postmark.BodyBoth htmlBody textBody
-                                    , messageStream = "outbound"
-                                    }
+                                ( model6
+                                , List.Nonempty.cons ( userToken3, { email = email, emailStatus = SendingEmail } ) list
+                                )
                             )
-                        |> Command.batch
-            in
-            ( { model7
-                | surveys =
-                    IdDict.insert
-                        surveyId
-                        { title = surveyName
-                        , questions =
-                            List.Nonempty.map
-                                (\{ question } -> { question = question, answers = Dict.empty })
-                                questions
-                        , emailedTo = emailTo2
-                        , owner = userToken
-                        , creationTime = time
-                        }
-                        model7.surveys
-              }
-            , Command.batch
-                [ Effect.Lamdera.sendToFrontend clientId (CreateSurveyResponse surveyId userToken emailTo2 time)
-                , emails
-                ]
-            )
+                            ( model4
+                            , Nonempty ( userToken2, { email = List.Nonempty.head emailTo, emailStatus = SendingEmail } ) []
+                            )
+                            (List.Nonempty.tail (List.Nonempty.uniq emailTo))
+
+                    emails : Command restriction toMsg BackendMsg
+                    emails =
+                        List.Nonempty.toList emailTo2
+                            |> List.map
+                                (\( userToken3, { email } ) ->
+                                    let
+                                        { subject, htmlBody, textBody } =
+                                            surveyEmail surveyName surveyId userToken3
+                                    in
+                                    Postmark.sendEmail
+                                        (SurveyEmailSent surveyId email)
+                                        Env.postmarkApiKey
+                                        { from = { name = "Simple Survey", email = replyEmail }
+                                        , to = Nonempty { name = "", email = email } []
+                                        , subject = subject
+                                        , body = Postmark.BodyBoth htmlBody textBody
+                                        , messageStream = "outbound"
+                                        }
+                                )
+                            |> Command.batch
+                in
+                ( { model7
+                    | surveys =
+                        IdDict.insert
+                            surveyId
+                            { title = surveyName
+                            , questions =
+                                List.Nonempty.map
+                                    (\{ question } -> { question = question, answers = Dict.empty })
+                                    questions
+                            , emailedTo = emailTo2
+                            , owner = userToken
+                            , creationTime = time
+                            }
+                            model7.surveys
+                  }
+                , Command.batch
+                    [ Effect.Lamdera.sendToFrontend clientId (CreateSurveyResponse surveyId userToken emailTo2 time)
+                    , emails
+                    ]
+                )
 
         LoadSurveyRequest surveyId userToken ->
             ( model
