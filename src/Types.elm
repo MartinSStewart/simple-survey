@@ -28,9 +28,17 @@ type FrontendState
     | AnsweringSurvey AnsweringSurvey2
     | SubmittedSurvey
     | CreatingSurvey CreatingSurvey2
-    | SurveyOverviewAdmin (Id SurveyId) FrontendSurvey
+    | SurveyOverviewAdmin SurveyOverview
     | LoadingSurveyFailed LoadSurveyError
     | PrivacyPage
+
+
+type alias SurveyOverview =
+    { surveyId : Id SurveyId
+    , survey : FrontendSurvey
+    , addMoreEmailTo : String
+    , sendingMoreEmails : Bool
+    }
 
 
 type alias AnsweringSurvey2 =
@@ -75,6 +83,7 @@ type FrontendMsg
     | PressedSubmitSurvey
     | CreateSurveyMsg CreateSurveyMsg
     | TypedAnswer Int String
+    | SurveyOverviewMsg SurveyOverviewMsg
 
 
 type CreateSurveyMsg
@@ -88,10 +97,16 @@ type CreateSurveyMsg
     | TypedSurveyName String
 
 
+type SurveyOverviewMsg
+    = TypedAddMoreEmailTo String
+    | SubmitMoreEmailTo
+
+
 type ToBackend
     = SubmitSurveyRequest (Id SurveyId) (Id UserToken) (Nonempty { answer : String })
     | CreateSurveyRequest SurveyName (Nonempty { question : String }) (Nonempty EmailAddress)
     | LoadSurveyRequest (Id SurveyId) (Id UserToken)
+    | SendMoreEmailsRequest (Id SurveyId) (Id UserToken) (Nonempty EmailAddress)
 
 
 type BackendMsg
@@ -120,3 +135,4 @@ type ToFrontend
             }
         )
     | LoadSurveyAdminResponse (Id SurveyId) (Result () FrontendSurvey)
+    | SendMoreEmailsResponse (Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } ))

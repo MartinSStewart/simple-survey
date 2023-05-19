@@ -1,6 +1,7 @@
 module Backend exposing (..)
 
 import AssocList as Dict
+import AssocSet
 import Duration
 import Effect.Command as Command exposing (BackendOnly, Command)
 import Effect.Lamdera exposing (ClientId, SessionId)
@@ -9,6 +10,7 @@ import Effect.Task as Task
 import Effect.Time as Time
 import Email.Html
 import Email.Html.Attributes
+import EmailAddress exposing (EmailAddress)
 import Env
 import Hex
 import Id exposing (Id, SurveyId, UserToken)
@@ -21,7 +23,7 @@ import Quantity
 import Route
 import String.Nonempty exposing (NonemptyString(..))
 import Survey exposing (EmailStatus(..))
-import SurveyName
+import SurveyName exposing (SurveyName)
 import Types exposing (..)
 import Unsafe
 
@@ -205,45 +207,8 @@ updateFromFrontendWithTime time sessionId clientId msg model =
                     ( model3, userToken ) =
                         Id.getUniqueId model2
 
-                    ( model4, userToken2 ) =
-                        Id.getUniqueId model3
-
-                    ( model7, emailTo2 ) =
-                        List.foldl
-                            (\email ( model5, list ) ->
-                                let
-                                    ( model6, userToken3 ) =
-                                        Id.getUniqueId model5
-                                in
-                                ( model6
-                                , List.Nonempty.cons ( userToken3, { email = email, emailStatus = SendingEmail } ) list
-                                )
-                            )
-                            ( model4
-                            , Nonempty ( userToken2, { email = List.Nonempty.head emailTo, emailStatus = SendingEmail } ) []
-                            )
-                            (List.Nonempty.tail (List.Nonempty.uniq emailTo))
-
-                    emails : Command restriction toMsg BackendMsg
-                    emails =
-                        List.Nonempty.toList emailTo2
-                            |> List.map
-                                (\( userToken3, { email } ) ->
-                                    let
-                                        { subject, htmlBody, textBody } =
-                                            surveyEmail surveyName surveyId userToken3
-                                    in
-                                    Postmark.sendEmail
-                                        (SurveyEmailSent surveyId email)
-                                        Env.postmarkApiKey
-                                        { from = { name = "Simple Survey", email = replyEmail }
-                                        , to = Nonempty { name = "", email = email } []
-                                        , subject = subject
-                                        , body = Postmark.BodyBoth htmlBody textBody
-                                        , messageStream = "outbound"
-                                        }
-                                )
-                            |> Command.batch
+                    ( model7, emailTo2, emails ) =
+                        sendEmails model3 emailTo [] surveyName surveyId
                 in
                 ( { model7
                     | surveys =
@@ -306,9 +271,93 @@ updateFromFrontendWithTime time sessionId clientId msg model =
                 |> Effect.Lamdera.sendToFrontend clientId
             )
 
+        SendMoreEmailsRequest surveyId userToken moreEmailTo ->
+            case IdDict.get surveyId model.surveys of
+                Just survey ->
+                    if survey.owner == userToken then
+                        let
+                            ( model2, moreEmailTo2, cmd ) =
+                                sendEmails model moreEmailTo (List.Nonempty.toList survey.emailedTo) survey.title surveyId
+                        in
+                        ( { model2
+                            | surveys =
+                                IdDict.insert
+                                    surveyId
+                                    { survey | emailedTo = List.Nonempty.append survey.emailedTo moreEmailTo2 }
+                                    model.surveys
+                          }
+                        , cmd
+                        )
+
+                    else
+                        ( model, Command.none )
+
+                Nothing ->
+                    ( model, Command.none )
+
 
 replyEmail =
     Unsafe.emailAddress "no-reply@simple-survey.lamdera.app"
+
+
+sendEmails :
+    { a | secretCounter : Int }
+    -> Nonempty EmailAddress
+    -> List ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )
+    -> SurveyName
+    -> Id SurveyId
+    ->
+        ( { a | secretCounter : Int }
+        , Nonempty ( Id UserToken, { email : EmailAddress, emailStatus : EmailStatus } )
+        , Command restriction toMsg BackendMsg
+        )
+sendEmails model3 emailTo existingEmails surveyName surveyId =
+    let
+        ( model4, userToken2 ) =
+            Id.getUniqueId model3
+
+        ( model7, emailTo2 ) =
+            List.foldl
+                (\email ( model5, list ) ->
+                    let
+                        ( model6, userToken3 ) =
+                            case List.find (\( _, a ) -> a.email == email) existingEmails of
+                                Just ( userToken4, _ ) ->
+                                    ( model5, userToken4 )
+
+                                Nothing ->
+                                    Id.getUniqueId model5
+                    in
+                    ( model6
+                    , List.Nonempty.cons ( userToken3, { email = email, emailStatus = SendingEmail } ) list
+                    )
+                )
+                ( model4
+                , Nonempty ( userToken2, { email = List.Nonempty.head emailTo, emailStatus = SendingEmail } ) []
+                )
+                (List.Nonempty.tail (List.Nonempty.uniq emailTo))
+    in
+    ( model7
+    , emailTo2
+    , List.Nonempty.toList emailTo2
+        |> List.map
+            (\( userToken3, { email } ) ->
+                let
+                    { subject, htmlBody, textBody } =
+                        surveyEmail surveyName surveyId userToken3
+                in
+                Postmark.sendEmail
+                    (SurveyEmailSent surveyId email)
+                    Env.postmarkApiKey
+                    { from = { name = "Simple Survey", email = replyEmail }
+                    , to = Nonempty { name = "", email = email } []
+                    , subject = subject
+                    , body = Postmark.BodyBoth htmlBody textBody
+                    , messageStream = "outbound"
+                    }
+            )
+        |> Command.batch
+    )
 
 
 nonemptyGet : a -> Nonempty ( a, b ) -> Maybe b

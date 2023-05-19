@@ -1,6 +1,7 @@
 module Frontend exposing (..)
 
 import AssocList as Dict
+import AssocSet
 import Browser exposing (UrlRequest(..))
 import Duration
 import Effect.Browser.Navigation
@@ -168,6 +169,33 @@ update msg model =
                             ( model, Command.none )
 
                 _ ->
+                    ( model, Command.none )
+
+        SurveyOverviewMsg surveyOverviewMsg ->
+            case model.state of
+                SurveyOverviewAdmin surveyOverview ->
+                    updateSurveyOverview surveyOverviewMsg surveyOverview
+                        |> Tuple.mapFirst (\a -> { model | state = SurveyOverviewAdmin a })
+
+                _ ->
+                    ( model, Command.none )
+
+
+updateSurveyOverview : SurveyOverviewMsg -> SurveyOverview -> ( SurveyOverview, Command FrontendOnly ToBackend msg )
+updateSurveyOverview msg model =
+    case msg of
+        TypedAddMoreEmailTo text ->
+            ( { model | addMoreEmailTo = text }, Command.none )
+
+        SubmitMoreEmailTo ->
+            case validateEmails model.addMoreEmailTo of
+                Ok moreEmailAddresses ->
+                    ( { model | addMoreEmailTo = "", sendingMoreEmails = True }
+                    , SendMoreEmailsRequest model.surveyId model.survey.owner moreEmailAddresses
+                        |> Effect.Lamdera.sendToBackend
+                    )
+
+                Err _ ->
                     ( model, Command.none )
 
 
@@ -348,15 +376,19 @@ updateFromBackend msg model =
                             ( { model
                                 | state =
                                     SurveyOverviewAdmin
-                                        surveyId
-                                        { title = surveyName
-                                        , questions =
-                                            List.Nonempty.map
-                                                (\question -> { question = question, answers = Dict.empty })
-                                                questions
-                                        , emailedTo = emailedTo
-                                        , owner = userToken
-                                        , creationTime = creationTime
+                                        { surveyId = surveyId
+                                        , survey =
+                                            { title = surveyName
+                                            , questions =
+                                                List.Nonempty.map
+                                                    (\question -> { question = question, answers = Dict.empty })
+                                                    questions
+                                            , emailedTo = emailedTo
+                                            , owner = userToken
+                                            , creationTime = creationTime
+                                            }
+                                        , addMoreEmailTo = ""
+                                        , sendingMoreEmails = False
                                         }
                               }
                             , Effect.Browser.Navigation.pushUrl
@@ -397,12 +429,33 @@ updateFromBackend msg model =
         LoadSurveyAdminResponse surveyId result ->
             ( case result of
                 Ok ok ->
-                    { model | state = SurveyOverviewAdmin surveyId ok }
+                    { model | state = SurveyOverviewAdmin { surveyId = surveyId, survey = ok, addMoreEmailTo = "", sendingMoreEmails = False } }
 
                 Err () ->
                     { model | state = LoadingSurveyFailed InvalidSurveyLink }
             , Command.none
             )
+
+        SendMoreEmailsResponse addMoreEmailTo ->
+            case model.state of
+                SurveyOverviewAdmin surveyOverview ->
+                    let
+                        survey =
+                            surveyOverview.survey
+                    in
+                    ( { model
+                        | state =
+                            SurveyOverviewAdmin
+                                { surveyOverview
+                                    | survey =
+                                        { survey | emailedTo = List.Nonempty.append survey.emailedTo addMoreEmailTo }
+                                }
+                      }
+                    , Command.none
+                    )
+
+                _ ->
+                    ( model, Command.none )
 
 
 unansweredQuestions : Nonempty { a | answer : String } -> Int
@@ -550,8 +603,11 @@ pageView state =
                 ]
                 |> Element.map CreateSurveyMsg
 
-        SurveyOverviewAdmin surveyId survey ->
+        SurveyOverviewAdmin surveyOverview ->
             let
+                survey =
+                    surveyOverview.survey
+
                 successfulEmails : List (Element msg)
                 successfulEmails =
                     List.filterMap
@@ -596,7 +652,25 @@ pageView state =
                         (List.Nonempty.toList survey.emailedTo)
 
                 adminUrl =
-                    Env.domain ++ Route.encode (Route.ViewSurvey surveyId survey.owner)
+                    Env.domain ++ Route.encode (Route.ViewSurvey surveyOverview.surveyId survey.owner)
+
+                alreadyEmailed : List String
+                alreadyEmailed =
+                    case validateEmails surveyOverview.addMoreEmailTo of
+                        Ok ok ->
+                            List.Nonempty.toList ok
+                                |> AssocSet.fromList
+                                |> AssocSet.intersect
+                                    (List.map
+                                        (\( _, { email } ) -> email)
+                                        (List.Nonempty.toList survey.emailedTo)
+                                        |> AssocSet.fromList
+                                    )
+                                |> AssocSet.toList
+                                |> List.map EmailAddress.toString
+
+                        Err _ ->
+                            []
             in
             Element.column
                 [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
@@ -624,6 +698,43 @@ pageView state =
                         (Element.text "Invites sent successfully to "
                             :: List.intersperse (Element.text ", ") successfulEmails
                         )
+                , Element.column
+                    [ Element.spacing 4, Element.width Element.fill ]
+                    [ Element.paragraph [ Element.Font.bold ]
+                        [ Element.text "List more people you want this survey emailed to. Comma separate each email." ]
+                    , Element.row [ Element.width Element.fill ]
+                        [ Element.Input.text
+                            [ Element.width Element.fill
+                            , Element.Border.roundEach { topLeft = 4, bottomLeft = 4, topRight = 0, bottomRight = 0 }
+                            , Element.Border.widthEach { left = 1, right = 0, top = 1, bottom = 1 }
+                            ]
+                            { text = surveyOverview.addMoreEmailTo
+                            , onChange = TypedAddMoreEmailTo
+                            , label =
+                                Element.Input.labelHidden
+                                    "List more people you want this survey emailed to. Comma separate each email."
+                            , placeholder =
+                                Element.text "johnz@example.com, bob@bob.com, jane123@mail.com"
+                                    |> Element.Input.placeholder []
+                                    |> Just
+                            }
+                        , button
+                            [ Element.paddingXY 16 8
+                            , Element.height Element.fill
+                            , Element.Background.color (Element.rgb 0.9 0.9 0.9)
+                            , Element.Border.roundEach { topLeft = 0, bottomLeft = 0, topRight = 8, bottomRight = 8 }
+                            ]
+                            SubmitMoreEmailTo
+                            (Element.text "Send email invites")
+                        ]
+                    , if List.isEmpty alreadyEmailed then
+                        Element.none
+
+                      else
+                        Element.paragraph
+                            [ Element.Font.size 16 ]
+                            [ Element.text ("⚠️ You've already emailed " ++ String.join ", " alreadyEmailed) ]
+                    ]
                 , if List.isEmpty failedEmails then
                     Element.none
 
@@ -650,7 +761,7 @@ pageView state =
                                   , width = Element.fill
                                   , view =
                                         \( _, userToken ) ->
-                                            (Env.domain ++ Route.encode (Route.ViewSurvey surveyId userToken))
+                                            (Env.domain ++ Route.encode (Route.ViewSurvey surveyOverview.surveyId userToken))
                                                 |> Element.text
                                                 |> Element.el [ Element.paddingXY 12 8, Element.Font.size 16 ]
                                   }
@@ -667,6 +778,7 @@ pageView state =
                         |> Element.text
                     ]
                 ]
+                |> Element.map SurveyOverviewMsg
 
         LoadingSurveyFailed error ->
             Element.column
