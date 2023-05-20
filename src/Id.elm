@@ -1,7 +1,7 @@
 module Id exposing
     ( Id(..)
-    , SurveyId
-    , UserToken
+    , SurveyId(..)
+    , UserToken(..)
     , decoder
     , encode
     , fromString
