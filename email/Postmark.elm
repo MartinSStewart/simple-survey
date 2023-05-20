@@ -117,7 +117,10 @@ emailToString address =
         EmailAddress.toString address.email
 
     else
-        address.name ++ " <" ++ EmailAddress.toString address.email ++ ">"
+        String.filter (\char -> char /= '<' || char /= '>') address.name
+            ++ " <"
+            ++ EmailAddress.toString address.email
+            ++ ">"
 
 
 type alias PostmarkSendResponse =

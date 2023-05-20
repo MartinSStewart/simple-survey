@@ -671,6 +671,18 @@ pageView state =
 
                         Err _ ->
                             []
+
+                emailsLeft : List String
+                emailsLeft =
+                    List.Nonempty.toList survey.emailedTo
+                        |> List.filterMap
+                            (\( _, { email } ) ->
+                                if Survey.hasSubmitted email survey then
+                                    Nothing
+
+                                else
+                                    EmailAddress.toString email |> Just
+                            )
             in
             Element.column
                 [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
@@ -735,6 +747,16 @@ pageView state =
                             [ Element.Font.size 16 ]
                             [ Element.text ("⚠️ You've already emailed " ++ String.join ", " alreadyEmailed) ]
                     ]
+                , if List.isEmpty emailsLeft then
+                    Element.none
+
+                  else
+                    Element.paragraph
+                        [ Element.Font.size 16 ]
+                        (Element.text "The following people haven't answered the survey: "
+                            :: List.intersperse (Element.text ", ")
+                                (List.map (\text -> Element.el [ Element.Font.bold ] (Element.text text)) emailsLeft)
+                        )
                 , if List.isEmpty failedEmails then
                     Element.none
 

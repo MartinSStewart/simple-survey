@@ -349,7 +349,7 @@ sendEmails model3 emailTo existingEmails surveyName surveyId =
                 Postmark.sendEmail
                     (SurveyEmailSent surveyId email)
                     Env.postmarkApiKey
-                    { from = { name = "Simple Survey", email = replyEmail }
+                    { from = { name = SurveyName.toString surveyName, email = replyEmail }
                     , to = Nonempty { name = "", email = email } []
                     , subject = subject
                     , body = Postmark.BodyBoth htmlBody textBody
