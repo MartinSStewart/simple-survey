@@ -752,16 +752,25 @@ pageView state =
                             [ Element.Font.size 16 ]
                             [ Element.text ("⚠️ You've already emailed " ++ String.join ", " alreadyEmailed) ]
                     ]
-                , if List.isEmpty emailsLeft then
-                    Element.none
+                , case List.length emailsLeft of
+                    0 ->
+                        Element.none
 
-                  else
-                    Element.paragraph
-                        [ Element.Font.size 16 ]
-                        (Element.text "The following people haven't answered the survey: "
-                            :: List.intersperse (Element.text ", ")
-                                (List.map (\text -> Element.el [ Element.Font.bold ] (Element.text text)) emailsLeft)
-                        )
+                    1 ->
+                        Element.paragraph
+                            [ Element.Font.size 16 ]
+                            (Element.text "1 person hasn't answered the survey yet: "
+                                :: List.intersperse (Element.text ", ")
+                                    (List.map (\text -> Element.el [ Element.Font.bold ] (Element.text text)) emailsLeft)
+                            )
+
+                    count ->
+                        Element.paragraph
+                            [ Element.Font.size 16 ]
+                            (Element.text (String.fromInt count ++ " people haven't answered the survey yet: ")
+                                :: List.intersperse (Element.text ", ")
+                                    (List.map (\text -> Element.el [ Element.Font.bold ] (Element.text text)) emailsLeft)
+                            )
                 , if List.isEmpty failedEmails then
                     Element.none
 
