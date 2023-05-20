@@ -18,6 +18,7 @@ import Env
 import Html
 import Html.Attributes
 import Id exposing (Id, UserToken)
+import IdDict
 import Lamdera
 import List.Extra as List
 import List.Nonempty exposing (Nonempty(..))
@@ -683,6 +684,10 @@ pageView state =
                                 else
                                     EmailAddress.toString email |> Just
                             )
+
+                surveysSubmitted : Int
+                surveysSubmitted =
+                    List.length (List.Nonempty.toList survey.emailedTo) - List.length emailsLeft
             in
             Element.column
                 [ contentWidth, Element.centerX, Element.padding 16, Element.spacing 32 ]
@@ -700,7 +705,7 @@ pageView state =
                     , Element.padding 16
                     , Element.width Element.fill
                     ]
-                    (List.map questionResultView (List.Nonempty.toList survey.questions))
+                    (List.map (questionResultView surveysSubmitted) (List.Nonempty.toList survey.questions))
                 , if List.isEmpty successfulEmails then
                     Element.none
 
@@ -878,11 +883,28 @@ title text =
     Element.paragraph [ Element.Font.size 26, Element.Font.bold ] [ Element.text text ]
 
 
-questionResultView : SurveyQuestion -> Element msg
-questionResultView { question, answers } =
+questionResultView : Int -> SurveyQuestion -> Element msg
+questionResultView surveysSubmitted { question, answers } =
+    let
+        skipCount =
+            surveysSubmitted - Dict.size answers
+    in
     Element.column
         [ Element.width Element.fill, Element.spacing 8 ]
         [ whiteSpaceParagraph question |> Element.el [ Element.Font.bold ]
+        , case skipCount of
+            0 ->
+                Element.none
+
+            1 ->
+                Element.el
+                    [ Element.Font.italic, Element.Font.color (Element.rgb 0.3 0.3 0.3), Element.Font.size 16 ]
+                    (Element.text "1 person skipped this question")
+
+            _ ->
+                Element.el
+                    [ Element.Font.italic, Element.Font.color (Element.rgb 0.3 0.3 0.3), Element.Font.size 16 ]
+                    (Element.text (String.fromInt skipCount ++ " people skipped this question"))
         , if Dict.isEmpty answers then
             Element.paragraph
                 [ Element.Font.italic, Element.Font.color (Element.rgb 0.3 0.3 0.3), Element.Font.size 16 ]
