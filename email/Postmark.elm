@@ -117,7 +117,7 @@ emailToString address =
         EmailAddress.toString address.email
 
     else
-        String.filter (\char -> char /= '<' || char /= '>') address.name
+        String.filter (\char -> char /= '<' || char /= '>' || char /= ',') address.name
             ++ " <"
             ++ EmailAddress.toString address.email
             ++ ">"
